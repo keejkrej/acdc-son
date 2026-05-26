@@ -14,13 +14,13 @@ if TYPE_CHECKING:
     from acdc.segment.segment_presenter import SegmentPresenter
     from acdc.segment.segment_view import SegmentView
 
-_current_viewer: SegmentationViewer | None = None
+_current_viewer: SegmentViewer | None = None
 
 
-class SegmentationViewer:
+class SegmentViewer:
     """Manual segmentation viewer; owns model, view, and presenter."""
 
-    _instances: ClassVar[WeakSet[SegmentationViewer]] = WeakSet()
+    _instances: ClassVar[WeakSet[SegmentViewer]] = WeakSet()
 
     def __init__(self, *, show: bool = False) -> None:
         get_qapp()
@@ -80,7 +80,7 @@ class SegmentationViewer:
         self._view.close()
 
 
-def current_viewer() -> SegmentationViewer | None:
+def current_viewer() -> SegmentViewer | None:
     """Return the most recently shown segmentation viewer, if any."""
     return _current_viewer
 
@@ -91,7 +91,7 @@ def run_segment(
 ) -> tuple[tuple[AcdcData, ...], AcdcResult]:
     """Open the 2D segmentation editor; block until the window closes."""
     images = coalesce_images(images)
-    viewer = SegmentationViewer()
+    viewer = SegmentViewer()
     viewer.open(images, segmentation)
     viewer.show()
     exec_until_closed(viewer.view)

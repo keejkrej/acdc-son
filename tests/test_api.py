@@ -112,11 +112,11 @@ def test_apply_brush_stroke_on_bound_result() -> None:
 
 
 def test_segmentation_viewer_open_binds_result() -> None:
-    from acdc.segment.segment_viewer import SegmentationViewer
+    from acdc.segment.segment_viewer import SegmentViewer
 
     imaged = AcdcData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
     result = AcdcResult.empty_like(imaged)
-    viewer = SegmentationViewer()
+    viewer = SegmentViewer()
     opened = viewer.open([imaged], result)
     assert opened is result
     assert viewer.model.mask is result.mask

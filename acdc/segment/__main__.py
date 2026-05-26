@@ -5,11 +5,11 @@ from __future__ import annotations
 import sys
 
 from acdc.app import run
-from acdc.segment.segment_viewer import SegmentationViewer
+from acdc.segment.segment_viewer import SegmentViewer
 
 
 def main() -> None:
-    viewer = SegmentationViewer()
+    viewer = SegmentViewer()
     viewer.show()
     sys.exit(run())
 
