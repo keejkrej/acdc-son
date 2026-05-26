@@ -7,10 +7,10 @@ import pyqtgraph as pg
 from qtpy.QtCore import Qt, QTimer
 from qtpy.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
-from cellacdc.blend import crossfade_opacities, layer_opacities
+from cellacdc.blend import layer_opacities
 from cellacdc.volume.cmaps import label_lut_to_vispy, pg_colormap_to_vispy
 from cellacdc.volume.lut import VolumeImageLutBar, VolumeLabelLutBar
-from cellacdc.volume.prepare import composite_display_volumes, voxel_display_scale
+from cellacdc.volume.prepare import voxel_display_scale
 
 
 class _LutColumn(QWidget):
@@ -42,8 +42,6 @@ class VolumeCanvas(QWidget):
         self._primary_secondary_blend = 50.0
         self._image_seg_blend = 50.0
         self._has_secondary = False
-        self._primary_channel_volume: np.ndarray | None = None
-        self._secondary_channel_volume: np.ndarray | None = None
         self._voxel_dz = 1.0
         self._voxel_dy = 1.0
         self._voxel_dx = 1.0
@@ -88,8 +86,6 @@ class VolumeCanvas(QWidget):
 
     def set_primary_secondary_blend(self, value_0_to_100: int) -> None:
         self._primary_secondary_blend = max(0.0, min(100.0, float(value_0_to_100)))
-        if self._has_secondary and self._secondary_channel_volume is not None:
-            self._refresh_image_display()
         self._apply_layer_blend()
 
     def set_image_seg_blend(self, value_0_to_100: int) -> None:
@@ -119,9 +115,9 @@ class VolumeCanvas(QWidget):
 
         self._label_lut.set_lut_size(label_lut_size)
 
-        self._primary_channel_volume = np.ascontiguousarray(image_volume, dtype=np.float32)
+        self._image_node.set_data(np.ascontiguousarray(image_volume, dtype=np.float32))
         self._image_lut.setLevels(*image_clim)
-        self._refresh_image_display()
+        self._apply_image_style()
 
         if label_volume is not None and np.any(label_volume):
             self._label_node.set_data(np.ascontiguousarray(label_volume, dtype=np.float32))
@@ -145,11 +141,12 @@ class VolumeCanvas(QWidget):
         assert self._secondary_node is not None
         assert self._canvas is not None
 
-        self._secondary_channel_volume = np.ascontiguousarray(volume, dtype=np.float32)
+        self._secondary_node.set_data(np.ascontiguousarray(volume, dtype=np.float32))
         self._secondary_lut.setLevels(*clim)
+        self._apply_secondary_style()
+        self._secondary_node.visible = True
         self._has_secondary = True
         self._secondary_lut_column.setVisible(True)
-        self._refresh_image_display()
         self._apply_voxel_scale(self._secondary_node)
         self._apply_layer_blend()
         self._sync_left_lut_width()
@@ -157,13 +154,11 @@ class VolumeCanvas(QWidget):
         self._canvas.update()
 
     def clear_secondary_volume(self) -> None:
-        self._secondary_channel_volume = None
         if self._secondary_node is not None:
             self._secondary_node.visible = False
         self._has_secondary = False
         self._secondary_lut_column.setVisible(False)
         self._sync_left_lut_width()
-        self._refresh_image_display()
         self._apply_layer_blend()
         if self._canvas is not None:
             self._canvas.update()
@@ -215,23 +210,23 @@ class VolumeCanvas(QWidget):
             elevation=30.0,
             azimuth=-60.0,
         )
-        scene = self._view.scene
+        scene_root = self._view.scene
         self._image_node = visuals.Volume(
             np.zeros((2, 2, 2), dtype=np.float32),
             method="mip",
-            parent=scene,
+            parent=scene_root,
         )
         self._secondary_node = visuals.Volume(
             np.zeros((2, 2, 2), dtype=np.float32),
             method="mip",
-            parent=scene,
+            parent=scene_root,
         )
         self._secondary_node.visible = False
         self._label_node = visuals.Volume(
             np.zeros((2, 2, 2), dtype=np.float32),
             method="translucent",
             interpolation="nearest",
-            parent=scene,
+            parent=scene_root,
         )
         self._label_node.visible = False
         gloo.set_state(blend=True, depth_test=False)
@@ -284,38 +279,8 @@ class VolumeCanvas(QWidget):
             hi = lo + 1e-6
         return lo, hi
 
-    def _refresh_image_display(self) -> None:
-        """Upload primary-only or composited primary/secondary data to the image volume."""
-        if not self._vispy_ready or self._image_node is None or self._primary_channel_volume is None:
-            return
-        if self._has_secondary and self._secondary_channel_volume is not None:
-            p_lo, p_hi = self._clim_from_lut(self._image_lut)
-            s_lo, s_hi = self._clim_from_lut(self._secondary_lut)
-            blended = composite_display_volumes(
-                self._primary_channel_volume,
-                self._secondary_channel_volume,
-                primary_lo=p_lo,
-                primary_hi=p_hi,
-                secondary_lo=s_lo,
-                secondary_hi=s_hi,
-                primary_secondary_blend_0_to_100=self._primary_secondary_blend,
-            )
-            self._image_node.set_data(blended)
-            self._image_node.method = "mip"
-            self._image_node.clim = (0.0, 1.0)
-            self._image_node.cmap = pg_colormap_to_vispy(self._image_lut.gradient.colorMap())
-            if self._secondary_node is not None:
-                self._secondary_node.visible = False
-        else:
-            self._image_node.set_data(self._primary_channel_volume)
-            self._image_node.method = "mip"
-            self._apply_image_style()
-            if self._secondary_node is not None:
-                self._secondary_node.visible = False
-
     def _apply_image_style(self) -> None:
         assert self._image_node is not None
-        self._image_node.method = "mip"
         self._image_node.cmap = pg_colormap_to_vispy(self._image_lut.gradient.colorMap())
         self._image_node.clim = self._clim_from_lut(self._image_lut)
 
@@ -338,11 +303,9 @@ class VolumeCanvas(QWidget):
             has_secondary=self._has_secondary,
         )
         if self._image_node is not None:
-            if self._has_secondary and self._secondary_channel_volume is not None:
-                image_scale, _seg_scale = crossfade_opacities(self._image_seg_blend)
-                self._image_node.opacity = image_scale
-            else:
-                self._image_node.opacity = primary_opacity
+            self._image_node.opacity = primary_opacity
+        if self._secondary_node is not None and self._secondary_node.visible:
+            self._secondary_node.opacity = secondary_opacity
         if self._label_node is not None and self._label_node.visible:
             self._label_node.opacity = seg_opacity
         if self._canvas is not None:
@@ -350,10 +313,7 @@ class VolumeCanvas(QWidget):
 
     def _on_image_lut_changed(self) -> None:
         if self._image_node is not None:
-            if self._has_secondary and self._secondary_channel_volume is not None:
-                self._refresh_image_display()
-            else:
-                self._apply_image_style()
+            self._apply_image_style()
             if self._canvas is not None:
                 self._canvas.update()
 
@@ -364,8 +324,8 @@ class VolumeCanvas(QWidget):
                 self._canvas.update()
 
     def _on_secondary_lut_changed(self) -> None:
-        if self._has_secondary and self._secondary_channel_volume is not None:
-            self._refresh_image_display()
+        if self._secondary_node is not None and self._secondary_node.visible:
+            self._apply_secondary_style()
             if self._canvas is not None:
                 self._canvas.update()
 

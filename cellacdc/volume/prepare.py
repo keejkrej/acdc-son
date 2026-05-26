@@ -7,7 +7,6 @@ import numpy as np
 from cellacdc.data import ImagedData, SegmentationResult
 from cellacdc.display_levels import autoscale_levels, scale_to_unit, stack_display_levels
 from cellacdc.segmentation import tools
-from cellacdc.blend import crossfade_opacities
 
 
 def array_volume_zyx(
@@ -78,37 +77,6 @@ def normalize_image_stack_volume(
         stack_hi=stack_levels[1],
         display_clim=display_clim,
     )
-
-
-def linearize_display_volume(
-    volume: np.ndarray,
-    lo: float,
-    hi: float,
-) -> np.ndarray:
-    """Map ``volume`` to ``[0, 1]`` using display levels (matches LUT windowing)."""
-    span = float(hi) - float(lo)
-    if span <= 0:
-        span = 1.0
-    scaled = (np.asarray(volume, dtype=np.float32) - float(lo)) / span
-    return np.clip(scaled, 0.0, 1.0)
-
-
-def composite_display_volumes(
-    primary: np.ndarray,
-    secondary: np.ndarray,
-    *,
-    primary_lo: float,
-    primary_hi: float,
-    secondary_lo: float,
-    secondary_hi: float,
-    primary_secondary_blend_0_to_100: float,
-) -> np.ndarray:
-    """Crossfade two level-adjusted channel volumes into one scalar volume."""
-    primary_w, secondary_w = crossfade_opacities(primary_secondary_blend_0_to_100)
-    primary_lin = linearize_display_volume(primary, primary_lo, primary_hi)
-    secondary_lin = linearize_display_volume(secondary, secondary_lo, secondary_hi)
-    blended = primary_w * primary_lin + secondary_w * secondary_lin
-    return np.ascontiguousarray(blended, dtype=np.float32)
 
 
 def voxel_display_scale(dz: float, dy: float, dx: float) -> tuple[float, float, float]:
