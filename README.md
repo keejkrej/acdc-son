@@ -40,34 +40,56 @@ uv run acdc-3d     # 3D volume viewer
 
 ## Programmatic API
 
-Load data, edit in the 2D viewer, optionally inspect in 3D, then continue your script:
+Script pipelines use **`acdc.middleware`** — a Gin-style context passed through `(ctx, next)` middleware:
 
 ```python
-import acdc
+from acdc.middleware import AcdcContext, load, segment, use, volume
 
-images, segmentation = acdc.load("/path/to/experiment", channels=["phase", "gfp"])
-images, segmentation = acdc.segment(images, segmentation)
-images, segmentation = acdc.volume(images, segmentation)
+ctx = load("/path/to/experiment", channels=["phase", "gfp"])
 
-segmentation.save()  # or downstream analysis on segmentation.mask
+pipeline = use(segment, volume)
+ctx = pipeline(ctx)
+
+ctx.segmentation.save()  # or downstream analysis on ctx.segmentation.mask
+```
+
+Add your own steps:
+
+```python
+def normalize(ctx: AcdcContext, next_) -> None:
+    # mutate ctx.images or ctx.segmentation in place
+    next_()
+
+ctx = use(normalize, segment, volume)(ctx)
+```
+
+Run a single viewer step without composing:
+
+```python
+from acdc.middleware import from_arrays, run_segment
+
+ctx = from_arrays(images, segmentation)
+ctx = run_segment(ctx)
 ```
 
 Build data yourself when you need full control:
 
 ```python
-images = acdc.ImageData.from_path_channels("/path/to/experiment", ["phase", "gfp"])
-segmentation = acdc.segmentResult.empty_like(images[0])
-# or: segmentation = acdc.segmentResult.from_path("mask.npz", like=images[0])
+from acdc.middleware import from_arrays, run_segment
 
-images, segmentation = acdc.segment(images, segmentation)
+images = acdc.ImageData.from_path_channels("/path/to/experiment", ["phase", "gfp"])
+segmentation = acdc.SegmentationResult.empty_like(images[0])
+ctx = from_arrays(images, segmentation)
+ctx = run_segment(ctx)
 ```
 
-- **`load(path, channel=..., channels=..., position=...)`** — returns `(images, segmentation)`; loads an existing mask from disk when present, otherwise a new empty mask
-- **`ImageData`** — read-only image volume + layout metadata
-- **`SegmentationResult`** — label mask (`uint32`); edited in 2D, overlaid in 3D
-- **`segment(images, segmentation)`** — 2D manual segmentation; blocks until the window closes; returns `(images, segmentation)` (same objects, possibly mutated in place)
-- **`volume(images, segmentation, t_index=0)`** — 3D read-only overlay; same blocking/return behavior
-- **`run()`** — only needed for CLI-style apps that keep a window open without `segment` (`uv run acdc-seg` or `uv run acdc-3d`)
+- **`AcdcContext`** — mutable pipeline state: `images`, `segmentation`, optional `t_index`, `meta`
+- **`load(...)`** — returns `AcdcContext`; loads mask from disk when present, otherwise new empty mask
+- **`use(m1, m2, ...)`** — compose middleware; returns `ctx -> ctx`
+- **`segment` / `volume`** — built-in viewer middleware (block until window closes)
+- **`run_segment` / `run_volume`** — run one viewer step on a context
+- **`ImageData` / `SegmentationResult`** — data types (`acdc.data`)
+- **`run()`** — only for CLI apps (`uv run acdc-seg` or `uv run acdc-3d`)
 
 3D viewer: dual LUT bars (image grey, labels viridis) and an **Image ↔ Segmentation** blend slider; vispy default volume rendering only (no exposed render controls).
 
@@ -75,9 +97,10 @@ images, segmentation = acdc.segment(images, segmentation)
 
 ```
 acdc/
-  __init__.py              # Public API
+  __init__.py              # Types + viewer classes
+  middleware/              # Script pipeline API (AcdcContext, use, load, segment, volume)
   app.py                   # get_qapp, run
-  data.py                  # ImageData + SegmentationResult
+  data.py                  # ImageData + SegmentationResult + load_data
   segment/
     __main__.py            # acdc-seg CLI
     viewer.py              # SegmentationViewer, segment

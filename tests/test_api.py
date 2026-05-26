@@ -10,7 +10,6 @@ from acdc.data import (
     ImageData,
     SegmentationResult,
     default_segmentation,
-    load,
 )
 from acdc.segment import io, tools
 from acdc.segment.model import SegmentationModel
@@ -172,6 +171,8 @@ def test_volume_accepts_channel_list() -> None:
 
 
 def test_load_returns_images_and_segmentation(tmp_path: Path) -> None:
+    from acdc.middleware import load
+
     images_dir = tmp_path / "Position_1" / "Images"
     images_dir.mkdir(parents=True)
     import tifffile
@@ -182,9 +183,9 @@ def test_load_returns_images_and_segmentation(tmp_path: Path) -> None:
         "channel_0_name,phase\n",
         encoding="utf-8",
     )
-    loaded_images, segmentation = load(tmp_path / "Position_1", channel="phase")
-    assert len(loaded_images) == 1
-    assert segmentation.mask.shape == loaded_images[0].image.shape
+    ctx = load(tmp_path / "Position_1", channel="phase")
+    assert len(ctx.images) == 1
+    assert ctx.segmentation.mask.shape == ctx.images[0].image.shape
 
 
 def test_volume_viewer_open_without_show() -> None:

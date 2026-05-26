@@ -85,7 +85,7 @@ def current_viewer() -> SegmentationViewer | None:
     return _current_viewer
 
 
-def segment(
+def run_segment(
     images: Sequence[ImageData],
     segmentation: SegmentationResult,
 ) -> tuple[tuple[ImageData, ...], SegmentationResult]:
@@ -96,3 +96,11 @@ def segment(
     viewer.show()
     exec_until_closed(viewer.view)
     return images, segmentation
+
+
+def segment(
+    images: Sequence[ImageData],
+    segmentation: SegmentationResult,
+) -> tuple[tuple[ImageData, ...], SegmentationResult]:
+    """Open the 2D segmentation editor; block until the window closes."""
+    return run_segment(images, segmentation)
