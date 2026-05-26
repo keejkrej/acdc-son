@@ -4,12 +4,25 @@ Minimal **manual segmentation** GUI for microscopy, rewritten from [Cell_ACDC](h
 
 ## Features
 
-- Open 2D–4D images (TIFF, NPY, NPZ)
+- Open Cell-ACDC experiment folders (`Position_n/Images/`) or individual image files
+- Position and channel pickers for multi-position experiments
 - Brush and eraser with configurable label ID and brush size
 - Frame and Z-slice navigation for stacks
 - Mask overlay toggle
 - Undo / redo
-- Save masks as `{image_stem}segm.npz` with key `arr_0` (`uint32`), compatible with Cell-ACDC
+- Save masks as `{basename}segm.npz` with key `arr_0` (`uint32`), compatible with Cell-ACDC
+
+## Opening data
+
+Primary workflow: **File → Open folder** and select any of:
+
+- Experiment root (contains `Position_1/`, `Position_2/`, …)
+- A single `Position_n/` folder
+- A `Position_n/Images/` folder directly
+
+Channel files are resolved as `{basename}{channel}_aligned.npz` (preferred) or `{basename}{channel}.tif`. Masks load/save as `{basename}segm.npz` in the same `Images/` folder.
+
+Use **File → Open image file** for loose TIFF/NPY/NPZ outside the Cell-ACDC layout.
 
 ## Requirements
 
@@ -32,6 +45,7 @@ cellacdc/
     model.py               # State and I/O orchestration
     view.py                # Qt / pyqtgraph UI
     presenter.py           # MVP wiring
+    experiment.py           # Cell-ACDC folder discovery
     io.py                  # Cell-ACDC mask format
     tools.py               # Brush math and stack helpers
 ```

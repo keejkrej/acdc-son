@@ -6,6 +6,7 @@ from pathlib import Path
 
 from qtpy.QtWidgets import QApplication, QMessageBox
 
+from . import experiment
 from .model import SegmentationModel
 from .view import SegmentationView
 
@@ -21,7 +22,8 @@ class SegmentationPresenter:
 
     def _connect(self) -> None:
         v = self._view
-        v.open_image_requested.connect(self._on_open_image)
+        v.open_folder_requested.connect(self._on_open_folder)
+        v.open_image_file_requested.connect(self._on_open_file)
         v.save_requested.connect(self._on_save)
         v.save_as_requested.connect(self._on_save_as)
         v.undo_requested.connect(self._on_undo)
@@ -41,7 +43,57 @@ class SegmentationPresenter:
     def run(self) -> None:
         self._view.show()
 
-    def _on_open_image(self) -> None:
+    def _on_open_folder(self) -> None:
+        path = self._view.ask_open_folder_path()
+        if not path:
+            return
+        try:
+            images_paths = experiment.resolve_images_paths(Path(path))
+        except Exception as exc:
+            QMessageBox.critical(self._view, "Open failed", str(exc))
+            return
+
+        if len(images_paths) > 1:
+            position_names = experiment.list_positions(Path(path))
+            if not position_names:
+                position_names = [
+                    experiment.position_name_from_images_path(p) or p.parent.name
+                    for p in images_paths
+                ]
+            picked = self._view.ask_pick_position(position_names)
+            if not picked:
+                return
+            try:
+                images_path = experiment.images_path_for_position(
+                    Path(path), images_paths, picked
+                )
+            except ValueError as exc:
+                QMessageBox.critical(self._view, "Open failed", str(exc))
+                return
+        else:
+            images_path = images_paths[0]
+
+        try:
+            _basename, channels = experiment.discover_basename_and_channels(images_path)
+        except Exception as exc:
+            QMessageBox.critical(self._view, "Open failed", str(exc))
+            return
+
+        channel = self._view.ask_pick_channel(channels)
+        if not channel:
+            return
+
+        try:
+            spec = experiment.build_load_spec(images_path, channel)
+            self._model.load_position(spec)
+        except Exception as exc:
+            QMessageBox.critical(self._view, "Open failed", str(exc))
+            return
+
+        self._sync_controls()
+        self._refresh()
+
+    def _on_open_file(self) -> None:
         path = self._view.ask_open_image_path()
         if not path:
             return
@@ -125,9 +177,9 @@ class SegmentationPresenter:
         self._view.set_navigation(self._model.t_index, t_max, self._model.z_index, z_max)
         self._view.set_label_id(self._model.label_id)
         self._view.set_brush_size(self._model.brush_size)
-        name = self._model.image_path.name if self._model.image_path else ""
+        label = self._model.status_label()
         dirty = " *" if self._model.dirty else ""
-        self._view.set_status(f"{name}{dirty}")
+        self._view.set_status(f"{label}{dirty}")
 
     def _refresh(self) -> None:
         if not self._model.has_data:

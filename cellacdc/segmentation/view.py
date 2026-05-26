@@ -8,10 +8,13 @@ from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (
     QAction,
     QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QListWidget,
     QSlider,
     QSpinBox,
     QToolBar,
@@ -116,7 +119,8 @@ class ImageCanvas(QWidget):
 class SegmentationView(QMainWindow):
     """Main window UI for manual segmentation."""
 
-    open_image_requested = Signal()
+    open_folder_requested = Signal()
+    open_image_file_requested = Signal()
     save_requested = Signal()
     save_as_requested = Signal()
     undo_requested = Signal()
@@ -141,16 +145,19 @@ class SegmentationView(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.addWidget(self._canvas)
-        self._status = QLabel("Open an image to begin.")
+        self._status = QLabel("Open a Cell-ACDC folder to begin.")
         layout.addWidget(self._status)
         return root
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
-        open_act = QAction("&Open image…", self)
-        open_act.setShortcut("Ctrl+O")
-        open_act.triggered.connect(self.open_image_requested.emit)
-        file_menu.addAction(open_act)
+        open_folder_act = QAction("Open &folder…", self)
+        open_folder_act.setShortcut("Ctrl+O")
+        open_folder_act.triggered.connect(self.open_folder_requested.emit)
+        file_menu.addAction(open_folder_act)
+        open_file_act = QAction("Open image &file…", self)
+        open_file_act.triggered.connect(self.open_image_file_requested.emit)
+        file_menu.addAction(open_file_act)
         save_act = QAction("&Save mask", self)
         save_act.setShortcut("Ctrl+S")
         save_act.triggered.connect(self.save_requested.emit)
@@ -232,14 +239,57 @@ class SegmentationView(QMainWindow):
         self._eraser_btn.setChecked(tool == "eraser")
         self.tool_changed.emit(tool)
 
+    def ask_open_folder_path(self) -> str | None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Open Cell-ACDC folder",
+            "",
+        )
+        return path or None
+
     def ask_open_image_path(self) -> str | None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open image",
+            "Open image file",
             "",
             "Images (*.tif *.tiff *.npy *.npz);;All files (*)",
         )
         return path or None
+
+    def ask_pick_position(self, names: list[str]) -> str | None:
+        if not names:
+            return None
+        if len(names) == 1:
+            return names[0]
+        return self._pick_from_list("Select position", names)
+
+    def ask_pick_channel(self, names: list[str]) -> str | None:
+        if not names:
+            return None
+        if len(names) == 1:
+            return names[0]
+        return self._pick_from_list("Select channel", names)
+
+    def _pick_from_list(self, title: str, names: list[str]) -> str | None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(f"{title}:"))
+        list_widget = QListWidget()
+        list_widget.addItems(names)
+        list_widget.setCurrentRow(0)
+        layout.addWidget(list_widget)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        selected = list_widget.currentItem()
+        return selected.text() if selected is not None else None
 
     def ask_save_mask_path(self) -> str | None:
         path, _ = QFileDialog.getSaveFileName(

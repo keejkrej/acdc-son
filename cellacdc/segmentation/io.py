@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -16,15 +17,31 @@ def segm_path_for_image(image_path: Path) -> Path:
     return image_path.with_name(f"{image_path.stem}{SEGM_SUFFIX}")
 
 
+def load_metadata_csv(path: Path) -> dict[str, str]:
+    """Load Cell-ACDC ``metadata.csv`` as a ``Description -> values`` mapping."""
+    path = Path(path)
+    metadata: dict[str, str] = {}
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            return metadata
+        for row in reader:
+            key = row.get("Description")
+            if key is None:
+                continue
+            metadata[key] = str(row.get("values", "")).strip()
+    return metadata
+
+
 def load_image(path: Path) -> np.ndarray:
     """Load a 2D–4D grayscale array from TIFF, NPY, or NPZ."""
     path = Path(path)
-    suffix = path.suffix.lower()
-    if suffix in {".tif", ".tiff"}:
+    name = path.name.lower()
+    if name.endswith((".tif", ".tiff")):
         data = tifffile.imread(path)
-    elif suffix == ".npy":
+    elif path.suffix.lower() == ".npy":
         data = np.load(path)
-    elif suffix == ".npz":
+    elif path.suffix.lower() == ".npz" or name.endswith("_aligned.npz"):
         archive = np.load(path)
         key = SEGM_KEY if SEGM_KEY in archive else archive.files[0]
         data = archive[key]

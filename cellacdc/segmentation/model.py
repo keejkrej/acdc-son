@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
 
-from . import io, tools
+from . import experiment, io, tools
 
 
 class SegmentationModel:
@@ -19,6 +18,10 @@ class SegmentationModel:
         self.layout: tools.StackLayout | None = None
         self.image_path: Path | None = None
         self.mask_path: Path | None = None
+        self.images_path: Path | None = None
+        self.position_name: str | None = None
+        self.basename: str | None = None
+        self.channel_name: str | None = None
         self.t_index = 0
         self.z_index = 0
         self.brush_size = 4
@@ -35,11 +38,24 @@ class SegmentationModel:
     def has_data(self) -> bool:
         return self.image is not None and self.mask is not None and self.layout is not None
 
-    def load_image(self, path: Path) -> None:
-        path = Path(path)
-        image = io.load_image(path)
-        layout = tools.infer_layout(image.shape)
-        mask_path = io.segm_path_for_image(path)
+    def _clear_experiment_context(self) -> None:
+        self.images_path = None
+        self.position_name = None
+        self.basename = None
+        self.channel_name = None
+
+    def _load_arrays(
+        self,
+        image: np.ndarray,
+        layout: tools.StackLayout,
+        image_path: Path,
+        mask_path: Path,
+        *,
+        images_path: Path | None = None,
+        position_name: str | None = None,
+        basename: str | None = None,
+        channel_name: str | None = None,
+    ) -> None:
         if mask_path.is_file():
             mask = io.load_mask(mask_path)
             if mask.shape != image.shape:
@@ -52,12 +68,42 @@ class SegmentationModel:
         self.image = image
         self.mask = mask
         self.layout = layout
-        self.image_path = path
+        self.image_path = image_path
         self.mask_path = saved_mask_path
+        self.images_path = images_path
+        self.position_name = position_name
+        self.basename = basename
+        self.channel_name = channel_name
         self.t_index = 0
         self.z_index = 0
         self.dirty = False
         self._clear_history()
+
+    def load_image(self, path: Path) -> None:
+        path = Path(path)
+        image = io.load_image(path)
+        layout = tools.infer_layout(image.shape)
+        mask_path = io.segm_path_for_image(path)
+        self._load_arrays(
+            image,
+            layout,
+            path,
+            mask_path,
+        )
+
+    def load_position(self, spec: experiment.PositionLoadSpec) -> None:
+        image = io.load_image(spec.image_path)
+        layout = tools.layout_from_metadata(image.shape, spec.size_t, spec.size_z)
+        self._load_arrays(
+            image,
+            layout,
+            spec.image_path,
+            spec.mask_path,
+            images_path=spec.images_path,
+            position_name=spec.position_name,
+            basename=spec.basename,
+            channel_name=spec.channel_name,
+        )
 
     def save_mask(self, path: Path | None = None) -> Path:
         if not self.has_data or self.mask is None:
@@ -69,6 +115,13 @@ class SegmentationModel:
         self.mask_path = dest
         self.dirty = False
         return dest
+
+    def status_label(self) -> str:
+        if self.position_name and self.channel_name:
+            return f"{self.position_name} / {self.channel_name}"
+        if self.image_path is not None:
+            return self.image_path.name
+        return ""
 
     def current_image_slice(self) -> np.ndarray:
         assert self.image is not None and self.layout is not None

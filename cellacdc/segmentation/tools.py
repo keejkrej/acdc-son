@@ -37,6 +37,35 @@ def infer_layout(shape: tuple[int, ...]) -> StackLayout:
     raise ValueError(f"Expected 2–4 dimensions, got {shape}")
 
 
+def layout_from_metadata(
+    shape: tuple[int, ...],
+    size_t: int | None,
+    size_z: int | None,
+) -> StackLayout:
+    """Build stack layout using metadata ``SizeT``/``SizeZ`` when available."""
+    if size_t is None or size_z is None:
+        return infer_layout(shape)
+
+    yx = shape[-2:]
+    if len(shape) == 2:
+        return StackLayout(2, False, False, max(1, size_t), max(1, size_z), yx[0], yx[1])
+    if len(shape) == 3:
+        d0 = shape[0]
+        has_time = size_t > 1 and size_z <= 1
+        has_z = size_z > 1 and size_t <= 1
+        if has_time:
+            return StackLayout(3, True, False, d0, 1, yx[0], yx[1])
+        if has_z:
+            return StackLayout(3, False, True, 1, d0, yx[0], yx[1])
+        if size_t > 1:
+            return StackLayout(3, True, False, d0, 1, yx[0], yx[1])
+        return StackLayout(3, False, True, 1, d0, yx[0], yx[1])
+    if len(shape) == 4:
+        t, z = shape[0], shape[1]
+        return StackLayout(4, True, True, t, z, yx[0], yx[1])
+    raise ValueError(f"Expected 2–4 dimensions, got {shape}")
+
+
 def normalize_to_4d(data: np.ndarray, layout: StackLayout) -> np.ndarray:
     """Return array shaped (T, Z, Y, X)."""
     arr = np.asarray(data)
