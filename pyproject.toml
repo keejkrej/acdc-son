@@ -8,6 +8,7 @@ license = { text = "BSD-3-Clause" }
 authors = [{ name = "Cell-ACDC contributors" }]
 dependencies = [
     "numpy>=1.26",
+    "scipy>=1.11",
     "tifffile>=2024.2.12",
     "qtpy>=2.4",
     "PySide6>=6.6",

@@ -28,6 +28,8 @@ class SegmentationModel:
         self._undo: list[np.ndarray] = []
         self._redo: list[np.ndarray] = []
         self._stroke_snapshot: np.ndarray | None = None
+        self._last_paint_y: int | None = None
+        self._last_paint_x: int | None = None
 
     @property
     def has_data(self) -> bool:
@@ -86,16 +88,26 @@ class SegmentationModel:
     def begin_stroke(self) -> None:
         if self.mask is not None:
             self._stroke_snapshot = self.mask.copy()
+        self._last_paint_y = None
+        self._last_paint_x = None
 
     def end_stroke(self) -> None:
         if self._stroke_snapshot is None or self.mask is None:
+            self._last_paint_y = None
+            self._last_paint_x = None
             return
+        if self.tool == "brush" and self.layout is not None:
+            sl = tools.extract_slice(self.mask, self.layout, self.t_index, self.z_index)
+            if tools.fill_label_holes(sl, self.label_id):
+                self.dirty = True
         if not np.array_equal(self._stroke_snapshot, self.mask):
             self._undo.append(self._stroke_snapshot)
             if len(self._undo) > 30:
                 self._undo.pop(0)
             self._redo.clear()
         self._stroke_snapshot = None
+        self._last_paint_y = None
+        self._last_paint_x = None
 
     def undo(self) -> bool:
         if not self._undo or self.mask is None:
@@ -114,18 +126,22 @@ class SegmentationModel:
         return True
 
     def paint(self, y: int, x: int) -> None:
-        if not self.has_data:
+        if not self.has_data or self.mask is None or self.layout is None:
             return
-        sl = self.current_mask_slice().copy()
-        tools.apply_brush(
+        sl = tools.extract_slice(self.mask, self.layout, self.t_index, self.z_index)
+        tools.apply_brush_stroke(
             sl,
             y,
             x,
+            self._last_paint_y,
+            self._last_paint_x,
             self.brush_size,
             self.label_id,
             erase=self.tool == "eraser",
         )
-        self.set_mask_slice(sl)
+        self._last_paint_y = y
+        self._last_paint_x = x
+        self.dirty = True
 
     def _clear_history(self) -> None:
         self._undo.clear()

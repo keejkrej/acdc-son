@@ -6,7 +6,6 @@ from pathlib import Path
 
 from qtpy.QtWidgets import QApplication, QMessageBox
 
-from . import tools
 from .model import SegmentationModel
 from .view import SegmentationView
 
@@ -110,10 +109,12 @@ class SegmentationPresenter:
 
     def _on_paint_at(self, y: int, x: int) -> None:
         self._model.paint(y, x)
-        self._refresh()
+        self._refresh_mask_only()
 
     def _on_stroke_finished(self) -> None:
         self._model.end_stroke()
+        self._refresh_mask_only()
+        self._sync_controls()
 
     def _sync_controls(self) -> None:
         layout = self._model.layout
@@ -133,9 +134,16 @@ class SegmentationPresenter:
             return
         img = self._model.current_image_slice()
         mask = self._model.current_mask_slice()
-        rgba = tools.labels_to_rgba(mask) if self._show_mask else None
-        self._view.refresh_display(img, rgba, show_mask=self._show_mask)
+        self._view.refresh_display(img, mask, show_mask=self._show_mask)
         self._sync_controls()
+
+    def _refresh_mask_only(self) -> None:
+        if not self._model.has_data:
+            return
+        self._view.refresh_mask(
+            self._model.current_mask_slice(),
+            show_mask=self._show_mask,
+        )
 
 
 def create_app() -> tuple[QApplication, SegmentationPresenter]:

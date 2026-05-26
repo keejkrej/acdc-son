@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import ndimage
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,72 @@ def apply_brush(
         mask_slice[y0:y1, x0:x1][circle] = np.uint32(label)
 
 
+def apply_brush_stroke(
+    mask_slice: np.ndarray,
+    y: int,
+    x: int,
+    prev_y: int | None,
+    prev_x: int | None,
+    radius: int,
+    label: int,
+    *,
+    erase: bool = False,
+) -> None:
+    """Paint a continuous stroke by interpolating disks between successive points."""
+    if prev_y is None or prev_x is None:
+        apply_brush(mask_slice, y, x, radius, label, erase=erase)
+        return
+    steps = max(abs(y - prev_y), abs(x - prev_x))
+    if steps == 0:
+        apply_brush(mask_slice, y, x, radius, label, erase=erase)
+        return
+    ys = np.linspace(prev_y, y, steps + 1, dtype=int)
+    xs = np.linspace(prev_x, x, steps + 1, dtype=int)
+    for py, px in zip(ys, xs, strict=False):
+        apply_brush(mask_slice, int(py), int(px), radius, label, erase=erase)
+
+
+def fill_label_holes(mask_slice: np.ndarray, label: int) -> bool:
+    """Fill interior holes in the region with ``label``. Returns True if modified."""
+    if label <= 0:
+        return False
+    region = mask_slice == label
+    if not np.any(region):
+        return False
+    filled = ndimage.binary_fill_holes(region)
+    if not np.any(filled & ~region):
+        return False
+    mask_slice[filled] = np.uint32(label)
+    return True
+
+
+def _label_rgb(label: int, c: float = 0.85) -> tuple[float, float, float]:
+    hue = (int(label) * 47) % 360
+    hp = hue / 60.0
+    x = c * (1 - abs(hp % 2 - 1))
+    if hp < 1:
+        return (c, x, 0)
+    if hp < 2:
+        return (x, c, 0)
+    if hp < 3:
+        return (0, c, x)
+    if hp < 4:
+        return (0, x, c)
+    if hp < 5:
+        return (x, 0, c)
+    return (c, 0, x)
+
+
+def build_label_lut(num_entries: int = 4096, alpha: float = 0.45) -> np.ndarray:
+    """Build an RGBA lookup table for label IDs (index 0 is transparent)."""
+    lut = np.zeros((num_entries, 4), dtype=np.ubyte)
+    alpha_u8 = int(round(alpha * 255))
+    for label in range(1, num_entries):
+        r, g, b = _label_rgb(label)
+        lut[label] = (int(r * 255), int(g * 255), int(b * 255), alpha_u8)
+    return lut
+
+
 def labels_to_rgba(mask_slice: np.ndarray, alpha: float = 0.45) -> np.ndarray:
     """Map label IDs to RGBA overlay (background transparent)."""
     h, w = mask_slice.shape
@@ -111,25 +178,9 @@ def labels_to_rgba(mask_slice: np.ndarray, alpha: float = 0.45) -> np.ndarray:
         return rgba
     for label in labels:
         sel = mask_slice == label
-        hue = (int(label) * 47) % 360
-        # HSV to RGB simplified
-        c = 0.85
-        hp = hue / 60.0
-        x = c * (1 - abs(hp % 2 - 1))
-        if hp < 1:
-            rgb = (c, x, 0)
-        elif hp < 2:
-            rgb = (x, c, 0)
-        elif hp < 3:
-            rgb = (0, c, x)
-        elif hp < 4:
-            rgb = (0, x, c)
-        elif hp < 5:
-            rgb = (x, 0, c)
-        else:
-            rgb = (c, 0, x)
-        rgba[sel, 0] = rgb[0]
-        rgba[sel, 1] = rgb[1]
-        rgba[sel, 2] = rgb[2]
+        r, g, b = _label_rgb(label)
+        rgba[sel, 0] = r
+        rgba[sel, 1] = g
+        rgba[sel, 2] = b
         rgba[sel, 3] = alpha
     return rgba

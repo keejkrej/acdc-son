@@ -36,6 +36,39 @@ def test_infer_layout_3d_z() -> None:
     assert layout.size_z == 8
 
 
+def test_apply_brush_stroke_interpolates() -> None:
+    mask = np.zeros((32, 32), dtype=np.uint32)
+    tools.apply_brush_stroke(mask, 0, 20, 0, 0, radius=2, label=3)
+    assert mask[0, 0] == 3
+    assert mask[0, 10] == 3
+    assert mask[0, 20] == 3
+    assert mask[10, 10] == 0
+
+
+def test_fill_label_holes() -> None:
+    mask = np.zeros((20, 20), dtype=np.uint32)
+    mask[2:18, 2:18] = 1
+    mask[5:15, 5:15] = 0
+    assert tools.fill_label_holes(mask, 1)
+    assert mask[10, 10] == 1
+
+
+def test_end_stroke_fills_holes(tmp_path: Path) -> None:
+    image = np.ones((20, 20), dtype=np.uint8)
+    image_path = tmp_path / "a.npy"
+    np.save(image_path, image)
+    model = SegmentationModel()
+    model.load_image(image_path)
+    sl = model.current_mask_slice()
+    sl[2:18, 2:18] = 1
+    sl[5:15, 5:15] = 0
+    model.set_mask_slice(sl)
+    model.begin_stroke()
+    model.paint(3, 3)
+    model.end_stroke()
+    assert model.current_mask_slice()[10, 10] == 1
+
+
 def test_undo(tmp_path: Path) -> None:
     image = np.ones((16, 16), dtype=np.uint8)
     image_path = tmp_path / "a.npy"

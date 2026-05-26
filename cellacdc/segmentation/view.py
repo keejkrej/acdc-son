@@ -19,6 +19,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from . import tools
+
 
 class ImageCanvas(QWidget):
     """Pyqtgraph canvas that emits image coordinates on paint gestures."""
@@ -43,16 +45,40 @@ class ImageCanvas(QWidget):
         self._plot.addItem(self._image_item)
         self._plot.addItem(self._mask_item)
         self._mask_item.setZValue(10)
+        self._label_lut = tools.build_label_lut()
+        self._mask_item.setLookupTable(self._label_lut)
+        self._mask_item.setLevels([0, len(self._label_lut)])
         self._painting = False
         self._viewbox = self._plot.getViewBox()
         self._orig_drag = self._viewbox.mouseDragEvent
         self._viewbox.mouseDragEvent = self._mouse_drag_event  # type: ignore[method-assign]
 
     def set_image(self, gray: np.ndarray) -> None:
-        self._image_item.setImage(gray, autoLevels=True)
+        if self._image_item.image is None or self._image_item.image.shape != gray.shape:
+            self._image_item.setImage(gray, autoLevels=True)
+        else:
+            self._image_item.setImage(gray, autoLevels=False)
 
-    def set_mask_overlay(self, rgba: np.ndarray) -> None:
-        self._mask_item.setImage(rgba, autoLevels=False)
+    def set_mask_labels(self, labels: np.ndarray) -> None:
+        max_label = int(labels.max(initial=0))
+        if max_label >= self._label_lut.shape[0]:
+            self._label_lut = tools.build_label_lut(max_label + 256)
+            self._mask_item.setLookupTable(self._label_lut)
+            self._mask_item.setLevels([0, len(self._label_lut)])
+        current = self._mask_item.image
+        if (
+            current is not None
+            and current.shape == labels.shape
+            and np.may_share_memory(current, labels)
+        ):
+            self._mask_item._renderRequired = True
+            self._mask_item.update()
+            return
+        self._mask_item.setImage(
+            labels,
+            autoLevels=False,
+            levels=(0, len(self._label_lut) - 1),
+        )
 
     def clear(self) -> None:
         self._image_item.clear()
@@ -256,17 +282,21 @@ class SegmentationView(QMainWindow):
     def refresh_display(
         self,
         image_slice: np.ndarray,
-        mask_rgba: np.ndarray | None,
+        mask_slice: np.ndarray,
         *,
         show_mask: bool,
     ) -> None:
         self._canvas.set_image(image_slice)
-        if show_mask and mask_rgba is not None:
-            self._canvas.set_mask_overlay(mask_rgba)
+        if show_mask:
+            self._canvas.set_mask_labels(mask_slice)
         else:
-            self._canvas.set_mask_overlay(
-                np.zeros((*image_slice.shape, 4), dtype=np.float32)
-            )
+            self._canvas.set_mask_labels(np.zeros_like(mask_slice))
+
+    def refresh_mask(self, mask_slice: np.ndarray, *, show_mask: bool) -> None:
+        if show_mask:
+            self._canvas.set_mask_labels(mask_slice)
+        else:
+            self._canvas.set_mask_labels(np.zeros_like(mask_slice))
 
     @property
     def canvas(self) -> ImageCanvas:
