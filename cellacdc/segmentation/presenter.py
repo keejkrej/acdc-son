@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from qtpy.QtWidgets import QApplication, QMessageBox
+from qtpy.QtWidgets import QMessageBox
 
 from . import experiment
 from .model import SegmentationModel
@@ -270,12 +270,16 @@ class SegmentationPresenter:
         self._refresh_selection()
 
 
-def create_app() -> tuple[QApplication, SegmentationPresenter]:
-    import pyqtgraph as pg
+def create_app():
+    """Deprecated: use ``cellacdc.SegmentationViewer`` instead."""
+    import warnings
 
-    pg.setConfigOptions(imageAxisOrder="row-major")
-    app = QApplication([])
-    model = SegmentationModel()
-    view = SegmentationView()
-    presenter = SegmentationPresenter(model, view)
-    return app, presenter
+    from cellacdc.viewer import SegmentationViewer, get_qapp
+
+    warnings.warn(
+        "create_app() is deprecated; use cellacdc.SegmentationViewer()",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    viewer = SegmentationViewer()
+    return get_qapp(), viewer.presenter

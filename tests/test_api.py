@@ -109,3 +109,26 @@ def test_apply_brush_stroke_on_bound_result() -> None:
     sl = tools.extract_slice(result.mask, exp.layout, 0, 0)
     tools.apply_brush(sl, 6, 6, radius=2, label=3)
     assert result.mask[6, 6] == 3
+
+
+def test_segmentation_viewer_open_binds_result() -> None:
+    from cellacdc.viewer import SegmentationViewer
+
+    exp = Experiment.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    result = SegmentationResult.empty_like(exp)
+    viewer = SegmentationViewer()
+    opened = viewer.open(exp, result=result)
+    assert opened is result
+    assert viewer.model.mask is result.mask
+    assert viewer.result is result
+
+
+def test_imshow_returns_viewer_and_result() -> None:
+    from cellacdc.viewer import imshow
+
+    exp = Experiment.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    result = SegmentationResult.empty_like(exp)
+    viewer, opened = imshow(exp, result=result, show=False)
+    assert viewer.model.has_data
+    assert opened is result
+    assert opened.mask is result.mask

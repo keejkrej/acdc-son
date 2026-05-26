@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import sys
+
+from cellacdc.viewer import SegmentationViewer, run
 
 
 def main() -> None:
-    os.environ.setdefault("QT_API", "pyside6")
-    from cellacdc.segmentation.presenter import create_app
-
-    app, presenter = create_app()
-    presenter.run()
-    sys.exit(app.exec())
+    viewer = SegmentationViewer()
+    viewer.show()
+    sys.exit(run())
 
 
 if __name__ == "__main__":

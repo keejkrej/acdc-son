@@ -1,12 +1,15 @@
 """Cell-ACDC minimal manual segmentation GUI."""
 
 from cellacdc.data import Experiment, ExperimentData, SegmentationResult
-from cellacdc.session import imshow, run
+from cellacdc.viewer import SegmentationViewer, current_viewer, get_qapp, imshow, run
 
 __all__ = [
     "Experiment",
     "ExperimentData",
     "SegmentationResult",
+    "SegmentationViewer",
+    "current_viewer",
+    "get_qapp",
     "imshow",
     "run",
     "__version__",

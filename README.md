@@ -46,18 +46,28 @@ import cellacdc
 data = cellacdc.ExperimentData.from_path("/path/to/experiment", channel="phase")
 result = cellacdc.SegmentationResult.empty_like(data)
 
-cellacdc.imshow(data, result=result)
-cellacdc.run()  # start the Qt event loop
+viewer, result = cellacdc.imshow(data, result=result)
+cellacdc.run()
 
 # Edits are written directly into result.mask
 assert result.dirty
 result.save("/optional/path/segm.npz")
 ```
 
+Explicit viewer handle (same code path as ``imshow``):
+
+```python
+viewer = cellacdc.SegmentationViewer()
+result = viewer.open(data, result=result)
+viewer.show()
+cellacdc.run()
+```
+
 - **`Experiment`** (`ExperimentData` alias) — read-only image volume + layout metadata
 - **`SegmentationResult`** — mutable `uint32` mask the GUI edits in place
-- **`imshow(data, result=...)`** — binds arrays to the viewer; omits `result` to auto-load `{basename}segm.npz` or start empty
-- **`run()`** — runs the Qt event loop (also callable after `uv run acdc-seg`)
+- **`SegmentationViewer`** — core viewer object (model + view + presenter)
+- **`imshow(data, result=..., viewer=..., show=True)`** — convenience wrapper; returns `(viewer, result)`
+- **`run()`** — runs the Qt event loop (also used by `uv run acdc-seg`)
 
 Fully in-memory workflow:
 
@@ -76,9 +86,9 @@ cellacdc.run()
 
 ```
 cellacdc/
-  __init__.py              # Public API: Experiment, SegmentationResult, imshow, run
+  __init__.py              # Public API
   data.py                  # Experiment + SegmentationResult types
-  session.py               # imshow / run session
+  viewer.py                # SegmentationViewer, imshow, run
   __main__.py              # CLI entry
   segmentation/
     model.py               # Editing state (binds to SegmentationResult)
