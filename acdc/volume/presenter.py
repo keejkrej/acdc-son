@@ -5,15 +5,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-import numpy as np
 from qtpy.QtWidgets import QMessageBox
 
+from acdc.channels import channel_display_name
 from acdc.data import ImageData, SegmentationResult
-from acdc.overlay import overlay_label, overlay_stack_array
 from acdc.segment import experiment
 from acdc.volume.model import VolumeModel
 from acdc.volume.prepare import (
-    array_volume_zyx,
     label_volume_for_vispy,
     mask_volume_zyx,
     normalize_image_stack_volume,
@@ -37,7 +35,7 @@ class VolumePresenter:
         v.label_id_changed.connect(self._on_label_id_changed)
         v.label_visibility_changed.connect(self._on_label_visibility_changed)
         v.t_index_changed.connect(self._on_t_changed)
-        v.primary_secondary_blend_changed.connect(self._on_primary_secondary_blend_changed)
+        v.channel_weights_changed.connect(self._on_channel_weights_changed)
         v.image_seg_blend_changed.connect(self._on_image_seg_blend_changed)
 
     def run(self) -> None:
@@ -57,22 +55,24 @@ class VolumePresenter:
         self._refresh()
         return mask
 
-    def _on_primary_secondary_blend_changed(self, value: int) -> None:
-        self._model.set_primary_secondary_blend(value)
-        self._view.canvas.set_primary_secondary_blend(value)
+    def _on_channel_weights_changed(self, weights: list[float]) -> None:
+        self._model.set_channel_weights(weights)
+        self._view.canvas.set_channel_weights(list(self._model.channel_weights))
 
     def _on_image_seg_blend_changed(self, value: int) -> None:
         self._model.set_image_seg_blend(value)
         self._view.canvas.set_image_seg_blend(value)
 
     def _sync_blend_ui(self) -> None:
-        has_overlay = bool(self._model.overlay_channels)
+        names = [
+            channel_display_name(channel, index)
+            for index, channel in enumerate(self._model.channels)
+        ]
         self._view.set_blend_ui(
             visible=self._model.has_data,
-            primary_secondary=int(round(self._model.primary_secondary_blend)),
+            channel_names=names,
+            channel_weights=self._model.channel_weights,
             image_seg=int(round(self._model.image_seg_blend)),
-            show_primary_secondary=has_overlay,
-            channel_name=overlay_label(self._model.overlay_channels) if has_overlay else "",
         )
 
     def _on_open_folder(self) -> None:
@@ -153,65 +153,48 @@ class VolumePresenter:
         )
         self._view.set_status(self._model.status_label())
 
-    def _refresh_volume(self) -> None:
+    def _refresh_view(self) -> None:
         if not self._model.has_data or self._model.primary is None or self._model.result is None:
             return
-        primary = self._model.primary
+        reference = self._model.primary
         result = self._model.result
-        image_raw = volume_zyx(primary, t_index=self._model.t_index)
-        image_vol, image_clim = normalize_image_stack_volume(
-            image_raw,
-            primary.image,
-            primary.layout,
-            stack_levels=self._model.primary_stack_levels,
-            display_clim=self._model.primary_display_clim,
-        )
-        label_raw = mask_volume_zyx(result, primary.layout, t_index=self._model.t_index)
+        volumes: list = []
+        clims: list[tuple[float, float]] = []
+        labels: list[str] = []
+        for index, channel in enumerate(self._model.channels):
+            image_raw = volume_zyx(channel, t_index=self._model.t_index)
+            image_vol, image_clim = normalize_image_stack_volume(
+                image_raw,
+                channel.image,
+                channel.layout,
+                stack_levels=self._model.channel_stack_levels[index],
+                display_clim=self._model.channel_display_clim[index],
+            )
+            volumes.append(image_vol)
+            clims.append(image_clim)
+            labels.append(channel_display_name(channel, index))
+
+        label_raw = mask_volume_zyx(result, reference.layout, t_index=self._model.t_index)
         label_vol, lut_size = label_volume_for_vispy(label_raw)
         max_from_ids = max(self._model.all_label_ids(), default=0)
         lut_size = max(lut_size, max_from_ids + 1, 2)
         self._view.canvas.set_voxel_sizes(
-            primary.physical_size_z,
-            primary.physical_size_y,
-            primary.physical_size_x,
+            reference.physical_size_z,
+            reference.physical_size_y,
+            reference.physical_size_x,
         )
-        self._view.canvas.set_volumes(
-            image_vol,
-            label_vol,
+        self._view.canvas.set_image_channels(
+            volumes,
+            clims=clims,
+            label_volume=label_vol,
             label_lut_size=lut_size,
-            image_clim=image_clim,
+            channel_labels=labels,
         )
-        self._view.refresh_label_visibility()
-
-    def _refresh_secondary_volume(self) -> None:
-        if (
-            not self._model.has_data
-            or self._model.primary is None
-            or not self._model.overlay_channels
-        ):
-            self._view.canvas.clear_secondary_volume()
-            return
-        primary = self._model.primary
-        secondary_image = overlay_stack_array(self._model.overlay_channels)
-        secondary_raw = array_volume_zyx(secondary_image, primary.layout, t_index=self._model.t_index)
-        secondary_vol, secondary_clim = normalize_image_stack_volume(
-            secondary_raw,
-            secondary_image,
-            primary.layout,
-            stack_levels=self._model.secondary_stack_levels,
-            display_clim=self._model.secondary_display_clim,
-        )
-        self._view.canvas.set_secondary_volume(secondary_vol, clim=secondary_clim)
-
-    def _refresh_view(self) -> None:
-        if not self._model.has_data or self._model.primary is None:
-            return
-        layout = self._model.primary.layout
-        t_max = max(0, layout.size_t - 1)
-        self._view.canvas.set_primary_secondary_blend(self._model.primary_secondary_blend)
+        self._view.canvas.set_channel_weights(list(self._model.channel_weights))
         self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
-        self._refresh_secondary_volume()
-        self._refresh_volume()
+        self._view.refresh_label_visibility()
+        layout = reference.layout
+        t_max = max(0, layout.size_t - 1)
         self._view.update_navigation_indices(self._model.t_index, t_max, 0, 0)
 
     def _refresh(self) -> None:

@@ -166,7 +166,7 @@ def test_volume_accepts_channel_list() -> None:
     viewer = VolumeViewer()
     viewer.open([primary, overlay], result)
     assert viewer.model.has_data
-    assert viewer.model.overlay_channels == [overlay]
+    assert viewer.model.channels == [primary, overlay]
     assert viewer.result is result
 
 

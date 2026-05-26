@@ -40,11 +40,10 @@ class SegmentationModel:
         self._stroke_snapshot: np.ndarray | None = None
         self._last_paint_y: int | None = None
         self._last_paint_x: int | None = None
-        self.overlay_channels: list[ImageData] = []
-        self.primary_secondary_blend = 50.0
+        self.channels: list[ImageData] = []
+        self.channel_weights: list[float] = []
         self.image_seg_blend = 50.0
-        self.image_display_levels: tuple[float, float] | None = None
-        self.secondary_display_levels: tuple[float, float] | None = None
+        self.channel_display_levels: list[tuple[float, float] | None] = []
 
     @property
     def dirty(self) -> bool:
@@ -73,9 +72,10 @@ class SegmentationModel:
         result: SegmentationResult,
     ) -> None:
         """Bind in-memory image channel(s) and a live segmentation result."""
+        from acdc.channels import default_channel_weights, resize_channel_weights
         from acdc.data import coalesce_images
 
-        image_list = coalesce_images(images)
+        image_list = list(coalesce_images(images))
         imaged = image_list[0]
         if result.mask.shape != imaged.image.shape:
             raise ValueError(
@@ -95,11 +95,13 @@ class SegmentationModel:
         self.title = imaged.title
         self.t_index = 0
         self.z_index = 0
-        self.overlay_channels = list(image_list[1:])
+        self.channels = image_list
+        self.channel_weights = resize_channel_weights(self.channel_weights, len(image_list))
+        if not self.channel_weights:
+            self.channel_weights = default_channel_weights(len(image_list))
         self.dirty = False
         self._clear_history()
-        self._refresh_image_display_levels()
-        self._refresh_secondary_display_levels()
+        self._refresh_channel_display_levels()
 
     def _clear_experiment_context(self) -> None:
         self.images_path = None
@@ -143,10 +145,11 @@ class SegmentationModel:
         self.title = title
         self.t_index = 0
         self.z_index = 0
-        self.overlay_channels = []
+        self.channels = []
+        self.channel_weights = [1.0]
         self.dirty = False
         self._clear_history()
-        self._refresh_image_display_levels()
+        self._refresh_channel_display_levels()
 
     def load_image(self, path: Path) -> None:
         path = Path(path)
@@ -222,38 +225,28 @@ class SegmentationModel:
         assert self.mask is not None and self.layout is not None
         return tools.extract_slice(self.mask, self.layout, self.t_index, self.z_index)
 
-    def current_secondary_slice(self) -> np.ndarray | None:
-        if not self.overlay_channels or self.layout is None:
-            return None
-        from acdc.overlay import overlay_slice_at
+    def current_channel_slice(self, index: int) -> np.ndarray:
+        assert self.layout is not None
+        channel = self.channels[index]
+        return tools.extract_slice(channel.image, self.layout, self.t_index, self.z_index)
 
-        return overlay_slice_at(
-            self.overlay_channels,
-            self.layout,
-            self.t_index,
-            self.z_index,
-        )
+    def current_channel_slices(self) -> list[np.ndarray]:
+        return [self.current_channel_slice(i) for i in range(len(self.channels))]
 
-    def _refresh_image_display_levels(self) -> None:
-        if self.image is None or self.layout is None:
-            self.image_display_levels = None
+    def _refresh_channel_display_levels(self) -> None:
+        if not self.channels or self.layout is None:
+            self.channel_display_levels = []
             return
         from acdc.display_levels import stack_autoscale_levels
 
-        self.image_display_levels = stack_autoscale_levels(self.image, self.layout)
+        self.channel_display_levels = [
+            stack_autoscale_levels(channel.image, self.layout) for channel in self.channels
+        ]
 
-    def _refresh_secondary_display_levels(self) -> None:
-        if not self.overlay_channels or self.layout is None:
-            self.secondary_display_levels = None
-            return
-        from acdc.display_levels import stack_autoscale_levels
-        from acdc.overlay import overlay_stack_array
+    def set_channel_weights(self, weights: Sequence[float]) -> None:
+        from acdc.channels import resize_channel_weights
 
-        overlay = overlay_stack_array(self.overlay_channels)
-        self.secondary_display_levels = stack_autoscale_levels(overlay, self.layout)
-
-    def set_primary_secondary_blend(self, value_0_to_100: float) -> None:
-        self.primary_secondary_blend = max(0.0, min(100.0, float(value_0_to_100)))
+        self.channel_weights = resize_channel_weights(weights, len(self.channels))
 
     def set_image_seg_blend(self, value_0_to_100: float) -> None:
         self.image_seg_blend = max(0.0, min(100.0, float(value_0_to_100)))

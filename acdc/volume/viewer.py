@@ -57,9 +57,7 @@ class VolumeViewer:
 
     @property
     def images(self) -> tuple[ImageData, ...]:
-        if self._model.primary is None:
-            return ()
-        return (self._model.primary, *self._model.overlay_channels)
+        return tuple(self._model.channels)
 
     @property
     def canvas(self):

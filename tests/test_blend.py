@@ -1,8 +1,10 @@
-"""Tests for crossfade layer opacity math."""
+"""Tests for multi-channel layer opacity math."""
 
 from __future__ import annotations
 
-from acdc.blend import crossfade_opacities, layer_opacities
+import pytest
+
+from acdc.blend import crossfade_opacities, display_opacities, normalized_weights
 
 
 def test_crossfade_opacities_endpoints() -> None:
@@ -11,25 +13,24 @@ def test_crossfade_opacities_endpoints() -> None:
     assert crossfade_opacities(50) == (0.5, 0.5)
 
 
-def test_layer_opacities_without_secondary() -> None:
-    primary, secondary, seg = layer_opacities(50, 0, has_secondary=False)
-    assert secondary == 0.0
-    assert primary == 1.0
+def test_normalized_weights_divides_by_sum() -> None:
+    assert normalized_weights([1.0, 1.0, 1.0]) == pytest.approx([1 / 3, 1 / 3, 1 / 3])
+    assert normalized_weights([1.0, 0.5]) == pytest.approx([2 / 3, 1 / 3])
+
+
+def test_normalized_weights_all_zero_splits_evenly() -> None:
+    assert normalized_weights([0.0, 0.0]) == [0.5, 0.5]
+
+
+def test_display_opacities_scales_channels_and_seg() -> None:
+    channels, seg = display_opacities([1.0, 1.0], 0)
+    assert channels == pytest.approx([0.5, 0.5])
     assert seg == 0.0
 
-    primary, secondary, seg = layer_opacities(50, 100, has_secondary=False)
-    assert primary == 0.0
-    assert secondary == 0.0
+    channels, seg = display_opacities([2.0, 1.0], 100)
+    assert channels == pytest.approx([0.0, 0.0])
     assert seg == 1.0
 
-
-def test_layer_opacities_with_secondary() -> None:
-    primary, secondary, seg = layer_opacities(0, 0, has_secondary=True)
-    assert primary == 1.0
-    assert secondary == 0.0
-    assert seg == 0.0
-
-    primary, secondary, seg = layer_opacities(100, 50, has_secondary=True)
-    assert primary == 0.0
-    assert secondary == 0.5
-    assert seg == 0.5
+    channels, seg = display_opacities([1.0, 0.0], 50)
+    assert channels == pytest.approx([0.5, 0.0])
+    assert seg == pytest.approx(0.5)

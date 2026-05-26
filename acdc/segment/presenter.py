@@ -8,7 +8,7 @@ from pathlib import Path
 from qtpy.QtWidgets import QMessageBox
 
 from acdc.data import ImageData, SegmentationResult, default_segmentation
-from acdc.overlay import overlay_label
+from acdc.channels import channel_display_name
 
 from . import experiment
 from .model import SegmentationModel
@@ -41,7 +41,7 @@ class SegmentationPresenter:
         v.t_index_changed.connect(self._on_t_changed)
         v.z_index_changed.connect(self._on_z_changed)
         v.label_visibility_changed.connect(self._on_label_visibility_changed)
-        v.primary_secondary_blend_changed.connect(self._on_primary_secondary_blend_changed)
+        v.channel_weights_changed.connect(self._on_channel_weights_changed)
         v.image_seg_blend_changed.connect(self._on_image_seg_blend_changed)
 
         c = v.canvas
@@ -66,22 +66,24 @@ class SegmentationPresenter:
         self._sync_controls()
         self._refresh()
 
-    def _on_primary_secondary_blend_changed(self, value: int) -> None:
-        self._model.set_primary_secondary_blend(value)
-        self._view.canvas.set_primary_secondary_blend(value)
+    def _on_channel_weights_changed(self, weights: list[float]) -> None:
+        self._model.set_channel_weights(weights)
+        self._view.canvas.set_channel_weights(list(self._model.channel_weights))
 
     def _on_image_seg_blend_changed(self, value: int) -> None:
         self._model.set_image_seg_blend(value)
         self._view.canvas.set_image_seg_blend(value)
 
     def _sync_blend_ui(self) -> None:
-        has_overlay = bool(self._model.overlay_channels)
+        names = [
+            channel_display_name(channel, index)
+            for index, channel in enumerate(self._model.channels)
+        ]
         self._view.set_blend_ui(
             visible=self._model.has_data,
-            primary_secondary=int(round(self._model.primary_secondary_blend)),
+            channel_names=names,
+            channel_weights=self._model.channel_weights,
             image_seg=int(round(self._model.image_seg_blend)),
-            show_primary_secondary=has_overlay,
-            channel_name=overlay_label(self._model.overlay_channels) if has_overlay else "",
         )
 
     def _on_open_folder(self) -> None:
@@ -264,16 +266,6 @@ class SegmentationPresenter:
         mask = self._model.current_mask_slice()
         return apply_label_visibility(mask, self._view.get_hidden_label_ids())
 
-    def _apply_display_levels(self) -> None:
-        levels = self._model.image_display_levels
-        if levels is not None:
-            self._view.canvas.set_image_display_levels(*levels)
-        secondary_levels = self._model.secondary_display_levels
-        if secondary_levels is not None:
-            self._view.canvas.set_secondary_display_levels(*secondary_levels)
-        else:
-            self._view.canvas.set_secondary_display_levels(None)
-
     def _refresh_slice(self) -> None:
         """Update the current T/Z slice only (frame slider hot path)."""
         if not self._model.has_data or self._model.layout is None:
@@ -281,10 +273,15 @@ class SegmentationPresenter:
         layout = self._model.layout
         t_max = max(0, layout.size_t - 1)
         z_max = max(0, layout.size_z - 1)
+        labels = [
+            channel_display_name(channel, index)
+            for index, channel in enumerate(self._model.channels)
+        ]
         self._view.refresh_display(
-            self._model.current_image_slice(),
+            self._model.current_channel_slices(),
             self._model.current_mask_slice(),
-            overlay_slice=self._model.current_secondary_slice(),
+            display_levels=self._model.channel_display_levels,
+            channel_labels=labels,
         )
         self._refresh_selection()
         self._view.update_navigation_indices(
@@ -297,18 +294,16 @@ class SegmentationPresenter:
     def _refresh_view(self) -> None:
         if not self._model.has_data:
             return
-        self._view.canvas.set_primary_secondary_blend(self._model.primary_secondary_blend)
+        self._view.canvas.set_channel_weights(self._model.channel_weights)
         self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
-        self._apply_display_levels()
         self._view.canvas.set_mask_max_label_id(self._model.max_label_id())
         self._refresh_slice()
 
     def _refresh(self) -> None:
         if not self._model.has_data:
             return
-        self._view.canvas.set_primary_secondary_blend(self._model.primary_secondary_blend)
+        self._view.canvas.set_channel_weights(self._model.channel_weights)
         self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
-        self._apply_display_levels()
         self._view.canvas.set_mask_max_label_id(self._model.max_label_id())
         self._refresh_slice()
         self._sync_controls()

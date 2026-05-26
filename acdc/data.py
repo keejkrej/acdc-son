@@ -146,14 +146,14 @@ def coalesce_images(images: Sequence[ImageData]) -> tuple[ImageData, ...]:
     seq = tuple(images)
     if not seq:
         raise ValueError("At least one ImageData is required")
-    primary = seq[0]
+    reference = seq[0]
     for other in seq[1:]:
-        if other.image.shape != primary.image.shape:
+        if other.image.shape != reference.image.shape:
             raise ValueError(
                 f"Channel shape {other.image.shape} does not match "
-                f"primary shape {primary.image.shape}"
+                f"reference shape {reference.image.shape}"
             )
-        if other.layout != primary.layout:
+        if other.layout != reference.layout:
             raise ValueError("All channels must share the same stack layout")
     return seq
 

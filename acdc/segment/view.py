@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import Point
@@ -25,7 +27,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from acdc.blend import layer_opacities
+from acdc.blend import display_opacities
 from acdc.blend_controls import BlendControlBar
 from acdc.dialogs import pick_from_list, pick_many_from_list
 
@@ -34,6 +36,13 @@ from acdc.display_levels import autoscale_levels
 from .lut import ImageLutBar, SegmentationLutBar
 from . import tools
 from acdc.icons import LucideIcon, lucide_qicon
+
+
+@dataclass
+class _ChannelSlot:
+    image_item: pg.ImageItem
+    lut: ImageLutBar
+    display_levels: tuple[float, float] | None = None
 
 
 class ImageCanvas(QWidget):
@@ -52,31 +61,30 @@ class ImageCanvas(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self._layout = pg.GraphicsLayoutWidget()
         layout.addWidget(self._layout)
-        self._plot = self._layout.addPlot(row=0, col=2)
+        self._plot = self._layout.addPlot(row=0, col=1)
         self._plot.invertY(True)
         self._plot.setAspectLocked(True)
         self._plot.hideAxis("bottom")
         self._plot.hideAxis("left")
-        self._image_item = pg.ImageItem()
-        self._overlay_item = pg.ImageItem()
+        self._channel_slots: list[_ChannelSlot] = []
         self._mask_item = pg.ImageItem()
         self._contour_item = pg.ImageItem()
         self._contour_labels: np.ndarray | None = None
-        self._plot.addItem(self._image_item)
-        self._plot.addItem(self._overlay_item)
         self._plot.addItem(self._mask_item)
         self._plot.addItem(self._contour_item)
-        self._overlay_item.setZValue(5)
         self._mask_item.setZValue(10)
         self._contour_item.setZValue(11)
-        self._overlay_item.setVisible(False)
-        self._image_lut = ImageLutBar(self._image_item)
-        self._secondary_lut = ImageLutBar(self._overlay_item, axis_label="Secondary")
-        self._secondary_lut.hide()
         self._seg_lut = SegmentationLutBar(self._mask_item)
-        self._layout.addItem(self._image_lut, row=0, col=0)
-        self._layout.addItem(self._secondary_lut, row=0, col=1)
-        self._layout.addItem(self._seg_lut, row=0, col=3)
+        first_item = pg.ImageItem()
+        first_lut = ImageLutBar(first_item, axis_label="Image")
+        first_lut.gradient.sigGradientChanged.connect(self._apply_layer_blend)
+        first_item.setZValue(1)
+        self._plot.addItem(first_item)
+        self._channel_slots.append(
+            _ChannelSlot(image_item=first_item, lut=first_lut, display_levels=None)
+        )
+        self._layout.addItem(first_lut, row=0, col=0)
+        self._layout.addItem(self._seg_lut, row=0, col=2)
         self._tool = "hand"
         self._brush_size = 4
         self._space_pan = False
@@ -99,20 +107,19 @@ class ImageCanvas(QWidget):
         self._layout.setFocusPolicy(Qt.StrongFocus)
         self._layout.installEventFilter(self)
         self._seg_lut.gradient.sigGradientChanged.connect(self._on_seg_lut_changed)
-        self._image_lut.gradient.sigGradientChanged.connect(self._apply_layer_blend)
-        self._secondary_lut.gradient.sigGradientChanged.connect(self._apply_layer_blend)
         self._source_labels: np.ndarray | None = None
         self._hidden_label_ids: set[int] = set()
-        self._has_overlay = False
-        self._primary_secondary_blend = 50.0
+        self._channel_weights: list[float] = [1.0]
         self._image_seg_blend = 50.0
-        self._image_display_levels: tuple[float, float] | None = None
-        self._secondary_display_levels: tuple[float, float] | None = None
         self._mask_max_label_id = 0
         self._seg_display_max = -1
 
-    def set_primary_secondary_blend(self, value_0_to_100: float) -> None:
-        self._primary_secondary_blend = max(0.0, min(100.0, float(value_0_to_100)))
+    @property
+    def _image_item(self) -> pg.ImageItem:
+        return self._channel_slots[0].image_item
+
+    def set_channel_weights(self, weights: list[float]) -> None:
+        self._channel_weights = [max(0.0, min(1.0, float(w))) for w in weights]
         self._apply_layer_blend()
 
     def set_image_seg_blend(self, value_0_to_100: float) -> None:
@@ -120,95 +127,111 @@ class ImageCanvas(QWidget):
         self._apply_layer_blend()
 
     def _apply_layer_blend(self) -> None:
-        primary_opacity, secondary_opacity, seg_opacity = layer_opacities(
-            self._primary_secondary_blend,
+        channel_opacities, seg_opacity = display_opacities(
+            self._channel_weights,
             self._image_seg_blend,
-            has_secondary=self._has_overlay,
         )
-        self._image_item.setOpacity(primary_opacity)
-        if self._has_overlay:
-            self._overlay_item.setVisible(True)
-            self._overlay_item.setOpacity(secondary_opacity)
+        for index, slot in enumerate(self._channel_slots):
+            opacity = channel_opacities[index] if index < len(channel_opacities) else 0.0
+            slot.image_item.setVisible(opacity > 1e-6)
+            slot.image_item.setOpacity(opacity)
+            slot.image_item.update()
         self._mask_item.setOpacity(seg_opacity)
-        self._image_item.update()
-        if self._has_overlay:
-            self._overlay_item.update()
         self._mask_item.update()
         scene = self._plot.scene()
         if scene is not None:
             scene.update()
 
-    def set_image_display_levels(self, lo: float, hi: float) -> None:
-        self._image_display_levels = (float(lo), float(hi))
-
-    def set_secondary_display_levels(
-        self,
-        lo: float | None,
-        hi: float | None = None,
-    ) -> None:
-        if lo is None or hi is None:
-            self._secondary_display_levels = None
-        else:
-            self._secondary_display_levels = (float(lo), float(hi))
-
     def set_mask_max_label_id(self, max_label_id: int) -> None:
         self._mask_max_label_id = max(int(max_label_id), 0)
 
-    def set_image(self, gray: np.ndarray) -> None:
-        gray = np.asarray(gray)
-        shape_changed = (
-            self._image_item.image is None
-            or self._image_item.image.shape != gray.shape
-        )
-        if self._image_display_levels is not None:
-            lo, hi = self._image_display_levels
-            if shape_changed:
-                self._image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
-                self._image_lut.setLevels(lo, hi)
-                self._image_lut.imageChanged(autoLevel=False, autoRange=True)
-            else:
-                self._image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
-        elif shape_changed:
-            lo, hi = autoscale_levels(gray)
-            self._image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
-            self._image_lut.setLevels(lo, hi)
-            self._image_lut.imageChanged(autoLevel=False, autoRange=True)
-        else:
-            self._image_item.setImage(gray, autoLevels=False)
+    def set_channel_slices(
+        self,
+        slices: list[np.ndarray],
+        *,
+        display_levels: list[tuple[float, float] | None] | None = None,
+        labels: list[str] | None = None,
+    ) -> None:
+        if display_levels is None:
+            display_levels = [None] * len(slices)
+        if labels is None:
+            labels = [f"Channel {i + 1}" for i in range(len(slices))]
+        self._sync_channel_count(len(slices), labels)
+        if len(self._channel_weights) != len(slices):
+            self._channel_weights = [1.0] * len(slices)
+        for index, gray in enumerate(slices):
+            levels = display_levels[index] if index < len(display_levels) else None
+            self._channel_slots[index].display_levels = levels
+            self._set_channel_image(index, np.asarray(gray), levels)
         self._apply_layer_blend()
 
-    def set_overlay(self, gray: np.ndarray) -> None:
-        gray = np.asarray(gray)
+    def _sync_channel_count(self, count: int, labels: list[str]) -> None:
+        while len(self._channel_slots) > count:
+            slot = self._channel_slots.pop()
+            self._plot.removeItem(slot.image_item)
+            self._layout.removeItem(slot.lut)
+            slot.lut.hide()
+
+        while len(self._channel_slots) < count:
+            index = len(self._channel_slots)
+            label = labels[index] if index < len(labels) else f"Channel {index + 1}"
+            image_item = pg.ImageItem()
+            lut = ImageLutBar(image_item, axis_label=label)
+            lut.gradient.sigGradientChanged.connect(self._apply_layer_blend)
+            image_item.setZValue(index + 1)
+            self._plot.addItem(image_item)
+            self._channel_slots.append(
+                _ChannelSlot(image_item=image_item, lut=lut, display_levels=None)
+            )
+
+        self._rebuild_lut_columns()
+
+    def _rebuild_lut_columns(self) -> None:
+        for slot in list(self._channel_slots):
+            try:
+                self._layout.removeItem(slot.lut)
+            except ValueError:
+                pass
+        try:
+            self._layout.removeItem(self._plot)
+        except ValueError:
+            pass
+        try:
+            self._layout.removeItem(self._seg_lut)
+        except ValueError:
+            pass
+        for index, slot in enumerate(self._channel_slots):
+            self._layout.addItem(slot.lut, row=0, col=index)
+            slot.lut.show()
+        plot_col = len(self._channel_slots)
+        self._layout.addItem(self._plot, row=0, col=plot_col)
+        self._layout.addItem(self._seg_lut, row=0, col=plot_col + 1)
+
+    def _set_channel_image(
+        self,
+        index: int,
+        gray: np.ndarray,
+        display_levels: tuple[float, float] | None,
+    ) -> None:
+        slot = self._channel_slots[index]
         shape_changed = (
-            self._overlay_item.image is None
-            or self._overlay_item.image.shape != gray.shape
+            slot.image_item.image is None or slot.image_item.image.shape != gray.shape
         )
-        if self._secondary_display_levels is not None:
-            lo, hi = self._secondary_display_levels
+        if display_levels is not None:
+            lo, hi = display_levels
             if shape_changed:
-                self._overlay_item.setImage(gray, autoLevels=False, levels=(lo, hi))
-                self._secondary_lut.setLevels(lo, hi)
-                self._secondary_lut.imageChanged(autoLevel=False, autoRange=True)
+                slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
+                slot.lut.setLevels(lo, hi)
+                slot.lut.imageChanged(autoLevel=False, autoRange=True)
             else:
-                self._overlay_item.setImage(gray, autoLevels=False, levels=(lo, hi))
+                slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
         elif shape_changed:
             lo, hi = autoscale_levels(gray)
-            self._overlay_item.setImage(gray, autoLevels=False, levels=(lo, hi))
-            self._secondary_lut.setLevels(lo, hi)
-            self._secondary_lut.imageChanged(autoLevel=False, autoRange=True)
+            slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
+            slot.lut.setLevels(lo, hi)
+            slot.lut.imageChanged(autoLevel=False, autoRange=True)
         else:
-            self._overlay_item.setImage(gray, autoLevels=False)
-        self._overlay_item.setVisible(True)
-        self._has_overlay = True
-        self._secondary_lut.show()
-        self._apply_layer_blend()
-
-    def clear_overlay(self) -> None:
-        self._overlay_item.clear()
-        self._overlay_item.setVisible(False)
-        self._secondary_lut.hide()
-        self._has_overlay = False
-        self._apply_layer_blend()
+            slot.image_item.setImage(gray, autoLevels=False)
 
     def set_mask_labels(self, labels: np.ndarray) -> None:
         self._source_labels = labels
@@ -272,14 +295,14 @@ class ImageCanvas(QWidget):
         self._contour_item.setImage(rgba, autoLevels=False)
 
     def clear(self) -> None:
-        self._image_item.clear()
+        for slot in self._channel_slots:
+            slot.image_item.clear()
         self._mask_item.clear()
         self._contour_item.clear()
         self._contour_labels = None
         self._source_labels = None
         self._hidden_label_ids = set()
-        self._image_display_levels = None
-        self._secondary_display_levels = None
+        self._channel_weights = [1.0]
         self._mask_max_label_id = 0
         self._seg_display_max = -1
         self._clear_marquee()
@@ -554,7 +577,7 @@ class ViewerFrame(QWidget):
 
     t_index_changed = Signal(int)
     z_index_changed = Signal(int)
-    primary_secondary_blend_changed = Signal(int)
+    channel_weights_changed = Signal(list)
     image_seg_blend_changed = Signal(int)
 
     def __init__(self, canvas: ImageCanvas, parent: QWidget | None = None) -> None:
@@ -565,43 +588,40 @@ class ViewerFrame(QWidget):
         layout.setSpacing(0)
         layout.addWidget(canvas, stretch=1)
         self._blend_bar = BlendControlBar()
-        self._blend_bar.primary_secondary_changed.connect(self.primary_secondary_blend_changed.emit)
+        self._blend_bar.channel_weights_changed.connect(self.channel_weights_changed.emit)
         self._blend_bar.image_seg_changed.connect(self.image_seg_blend_changed.emit)
         self._blend_bar.image_seg_changed.connect(self._on_image_seg_changed)
-        self._blend_bar.primary_secondary_changed.connect(self._on_primary_secondary_changed)
+        self._blend_bar.channel_weights_changed.connect(self._on_channel_weights_changed)
         layout.addWidget(self._blend_bar)
         self._transport = TransportBar()
         self._transport.t_index_changed.connect(self.t_index_changed.emit)
         self._transport.z_index_changed.connect(self.z_index_changed.emit)
         layout.addWidget(self._transport)
         self._on_image_seg_changed(50)
-        self._on_primary_secondary_changed(50)
         self._blend_bar.setVisible(False)
 
     def _on_image_seg_changed(self, value: int) -> None:
         self.canvas.set_image_seg_blend(value)
 
-    def _on_primary_secondary_changed(self, value: int) -> None:
-        self.canvas.set_primary_secondary_blend(value)
+    def _on_channel_weights_changed(self, weights: list[float]) -> None:
+        self.canvas.set_channel_weights(weights)
 
     def set_blend_controls(
         self,
         *,
         visible: bool,
-        primary_secondary: int,
+        channel_names: list[str],
+        channel_weights: list[float],
         image_seg: int,
-        show_primary_secondary: bool,
-        channel_name: str = "",
     ) -> None:
         self._blend_bar.setVisible(visible)
         if visible:
-            self._blend_bar.set_values(
-                primary_secondary=primary_secondary,
+            self._blend_bar.set_channels(
+                channel_names,
+                weights=channel_weights,
                 image_seg=image_seg,
-                show_primary_secondary=show_primary_secondary,
-                channel_name=channel_name,
             )
-            self.canvas.set_primary_secondary_blend(primary_secondary)
+            self.canvas.set_channel_weights(channel_weights)
             self.canvas.set_image_seg_blend(image_seg)
 
     def set_navigation(self, t: int, t_max: int, z: int, z_max: int) -> None:
@@ -767,7 +787,7 @@ class SegmentationView(QMainWindow):
     t_index_changed = Signal(int)
     z_index_changed = Signal(int)
     label_visibility_changed = Signal()
-    primary_secondary_blend_changed = Signal(int)
+    channel_weights_changed = Signal(list)
     image_seg_blend_changed = Signal(int)
     closed = Signal()
 
@@ -779,7 +799,7 @@ class SegmentationView(QMainWindow):
         self._viewer = ViewerFrame(self._canvas)
         self._viewer.t_index_changed.connect(self.t_index_changed.emit)
         self._viewer.z_index_changed.connect(self.z_index_changed.emit)
-        self._viewer.primary_secondary_blend_changed.connect(self.primary_secondary_blend_changed.emit)
+        self._viewer.channel_weights_changed.connect(self.channel_weights_changed.emit)
         self._viewer.image_seg_blend_changed.connect(self.image_seg_blend_changed.emit)
         self._canvas.brush_size_changed.connect(self._on_canvas_brush_size_changed)
         self.setCentralWidget(self._viewer)
@@ -1038,16 +1058,17 @@ class SegmentationView(QMainWindow):
 
     def refresh_display(
         self,
-        image_slice: np.ndarray,
+        channel_slices: list[np.ndarray],
         mask_slice: np.ndarray,
         *,
-        overlay_slice: np.ndarray | None = None,
+        display_levels: list[tuple[float, float] | None] | None = None,
+        channel_labels: list[str] | None = None,
     ) -> None:
-        self._canvas.set_image(image_slice)
-        if overlay_slice is not None:
-            self._canvas.set_overlay(overlay_slice)
-        else:
-            self._canvas.clear_overlay()
+        self._canvas.set_channel_slices(
+            channel_slices,
+            display_levels=display_levels,
+            labels=channel_labels,
+        )
         self._canvas.set_mask_labels(mask_slice)
         self._canvas.set_hidden_labels(self.get_hidden_label_ids())
 
@@ -1055,17 +1076,15 @@ class SegmentationView(QMainWindow):
         self,
         *,
         visible: bool,
-        primary_secondary: int,
+        channel_names: list[str],
+        channel_weights: list[float],
         image_seg: int,
-        show_primary_secondary: bool,
-        channel_name: str = "",
     ) -> None:
         self._viewer.set_blend_controls(
             visible=visible,
-            primary_secondary=primary_secondary,
+            channel_names=channel_names,
+            channel_weights=channel_weights,
             image_seg=image_seg,
-            show_primary_secondary=show_primary_secondary,
-            channel_name=channel_name,
         )
 
     def refresh_mask(self, mask_slice: np.ndarray) -> None:

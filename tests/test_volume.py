@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from acdc.blend import display_opacities
 from acdc.data import ImageData
 from acdc.segment import tools
 from acdc.volume.prepare import (
@@ -79,7 +80,7 @@ def test_voxel_display_scale_matches_cell_acdc_ratio() -> None:
     assert voxel_display_scale(1.0, 0.5, 0.5) == (1.0, 1.0, 2.0)
 
 
-def test_volume_canvas_dual_volumes_use_napari_style_gl_blend() -> None:
+def test_volume_canvas_dual_channels_use_napari_style_gl_blend() -> None:
     pytest.importorskip("vispy")
     import os
 
@@ -98,16 +99,20 @@ def test_volume_canvas_dual_volumes_use_napari_style_gl_blend() -> None:
     primary[2, 2, 2] = 1.0
     secondary = np.zeros((8, 8, 8), dtype=np.float32)
     secondary[5, 5, 5] = 1.0
-    canvas.set_volumes(primary, None, label_lut_size=2, image_clim=(0.0, 1.0))
-    canvas.set_secondary_volume(secondary, clim=(0.0, 1.0))
+    canvas.set_image_channels(
+        [primary, secondary],
+        clims=[(0.0, 1.0), (0.0, 1.0)],
+        label_volume=None,
+        label_lut_size=2,
+    )
 
-    assert canvas._image_node is not None
-    assert canvas._secondary_node is not None
-    assert canvas._image_node.method == "mip"
-    assert canvas._secondary_node.method == "mip"
-    assert canvas._image_node.order < canvas._secondary_node.order
-    image_blend = canvas._image_node._vshare.gl_state["blend_func"]
-    secondary_blend = canvas._secondary_node._vshare.gl_state["blend_func"]
+    assert len(canvas._image_channels) == 2
+    ch0, ch1 = canvas._image_channels
+    assert ch0.node.method == "mip"
+    assert ch1.node.method == "mip"
+    assert ch0.node.order < ch1.node.order
+    image_blend = ch0.node._vshare.gl_state["blend_func"]
+    secondary_blend = ch1.node._vshare.gl_state["blend_func"]
     assert image_blend[:2] == volume_gl_state(
         "translucent_no_depth", first_visible=True
     )["blend_func"][:2]
@@ -116,7 +121,7 @@ def test_volume_canvas_dual_volumes_use_napari_style_gl_blend() -> None:
     ][:2]
 
 
-def test_volume_canvas_secondary_only_uses_first_visible_additive() -> None:
+def test_volume_canvas_single_active_channel_uses_first_visible_additive() -> None:
     pytest.importorskip("vispy")
     import os
 
@@ -131,26 +136,22 @@ def test_volume_canvas_secondary_only_uses_first_visible_additive() -> None:
 
     app = QApplication.instance() or QApplication([])
     canvas = VolumeCanvas()
-    canvas.set_volumes(
-        np.zeros((4, 4, 4), dtype=np.float32),
-        None,
+    canvas.set_image_channels(
+        [np.zeros((4, 4, 4), dtype=np.float32), np.ones((4, 4, 4), dtype=np.float32) * 0.5],
+        clims=[(0.0, 1.0), (0.0, 1.0)],
+        label_volume=None,
         label_lut_size=2,
-        image_clim=(0.0, 1.0),
     )
-    canvas.set_secondary_volume(
-        np.ones((4, 4, 4), dtype=np.float32) * 0.5,
-        clim=(0.0, 1.0),
-    )
-    canvas.set_primary_secondary_blend(100)
+    canvas.set_channel_weights([0.0, 1.0])
 
-    assert canvas._secondary_node is not None
-    secondary_blend = canvas._secondary_node._vshare.gl_state["blend_func"]
-    assert secondary_blend[:2] == volume_gl_state("additive", first_visible=True)[
-        "blend_func"
-    ][:2]
+    ch1 = canvas._image_channels[1]
+    secondary_blend = ch1.node._vshare.gl_state["blend_func"]
+    assert secondary_blend[:2] == volume_gl_state(
+        "translucent_no_depth", first_visible=True
+    )["blend_func"][:2]
 
 
-def test_volume_canvas_dual_volumes_use_opacity_blend() -> None:
+def test_volume_canvas_channel_weights_use_normalized_opacity() -> None:
     pytest.importorskip("vispy")
     import os
 
@@ -168,17 +169,20 @@ def test_volume_canvas_dual_volumes_use_opacity_blend() -> None:
     primary[2, 2, 2] = 1.0
     secondary = np.zeros((8, 8, 8), dtype=np.float32)
     secondary[5, 5, 5] = 1.0
-    canvas.set_volumes(primary, None, label_lut_size=2, image_clim=(0.0, 1.0))
-    canvas.set_secondary_volume(secondary, clim=(0.0, 1.0))
+    canvas.set_image_channels(
+        [primary, secondary],
+        clims=[(0.0, 1.0), (0.0, 1.0)],
+        label_volume=None,
+        label_lut_size=2,
+    )
+    canvas.set_channel_weights([0.0, 1.0])
     canvas.set_image_seg_blend(0)
-    canvas.set_primary_secondary_blend(100)
 
-    assert canvas._secondary_node is not None
-    assert canvas._secondary_node.visible is True
-    assert canvas._image_node.opacity == 0.0
-    assert canvas._secondary_node.opacity == 1.0
-    assert canvas._image_node._last_data[2, 2, 2] == 1.0
-    assert canvas._secondary_node._last_data[5, 5, 5] == 1.0
+    opacities, _seg = display_opacities([0.0, 1.0], 0)
+    assert canvas._image_channels[0].node.opacity == pytest.approx(opacities[0])
+    assert canvas._image_channels[1].node.opacity == pytest.approx(opacities[1])
+    assert canvas._image_channels[0].node._last_data[2, 2, 2] == 1.0
+    assert canvas._image_channels[1].node._last_data[5, 5, 5] == 1.0
 
 
 def test_volume_canvas_uses_mip_for_image_channels() -> None:
@@ -196,7 +200,13 @@ def test_volume_canvas_uses_mip_for_image_channels() -> None:
     app = QApplication.instance() or QApplication([])
     canvas = VolumeCanvas()
     canvas._ensure_vispy()
-    assert canvas._image_node.method == "mip"
+    canvas.set_image_channels(
+        [np.zeros((2, 2, 2), dtype=np.float32)],
+        clims=[(0.0, 1.0)],
+        label_volume=None,
+        label_lut_size=2,
+    )
+    assert canvas._image_channels[0].node.method == "mip"
     assert canvas._label_node.method == "translucent"
 
 

@@ -28,7 +28,7 @@ class VolumeViewerFrame(QWidget):
     """Volume canvas with crossfade and frame controls (no Z-slice scrub)."""
 
     t_index_changed = Signal(int)
-    primary_secondary_blend_changed = Signal(int)
+    channel_weights_changed = Signal(list)
     image_seg_blend_changed = Signal(int)
 
     def __init__(self, canvas: VolumeCanvas, parent: QWidget | None = None) -> None:
@@ -45,9 +45,9 @@ class VolumeViewerFrame(QWidget):
         bottom_layout.setSpacing(0)
 
         self._blend_bar = BlendControlBar()
-        self._blend_bar.primary_secondary_changed.connect(self.primary_secondary_blend_changed.emit)
+        self._blend_bar.channel_weights_changed.connect(self.channel_weights_changed.emit)
         self._blend_bar.image_seg_changed.connect(self.image_seg_blend_changed.emit)
-        self._blend_bar.primary_secondary_changed.connect(self._on_primary_secondary_changed)
+        self._blend_bar.channel_weights_changed.connect(self._on_channel_weights_changed)
         self._blend_bar.image_seg_changed.connect(self._on_image_seg_changed)
         bottom_layout.addWidget(self._blend_bar)
 
@@ -66,33 +66,30 @@ class VolumeViewerFrame(QWidget):
 
         layout.addWidget(bottom)
         self._on_image_seg_changed(50)
-        self._on_primary_secondary_changed(50)
         self._blend_bar.setVisible(False)
 
     def _on_image_seg_changed(self, value: int) -> None:
         self.canvas.set_image_seg_blend(value)
 
-    def _on_primary_secondary_changed(self, value: int) -> None:
-        self.canvas.set_primary_secondary_blend(value)
+    def _on_channel_weights_changed(self, weights: list[float]) -> None:
+        self.canvas.set_channel_weights(weights)
 
     def set_blend_controls(
         self,
         *,
         visible: bool,
-        primary_secondary: int,
+        channel_names: list[str],
+        channel_weights: list[float],
         image_seg: int,
-        show_primary_secondary: bool,
-        channel_name: str = "",
     ) -> None:
         self._blend_bar.setVisible(visible)
         if visible:
-            self._blend_bar.set_values(
-                primary_secondary=primary_secondary,
+            self._blend_bar.set_channels(
+                channel_names,
+                weights=channel_weights,
                 image_seg=image_seg,
-                show_primary_secondary=show_primary_secondary,
-                channel_name=channel_name,
             )
-            self.canvas.set_primary_secondary_blend(primary_secondary)
+            self.canvas.set_channel_weights(channel_weights)
             self.canvas.set_image_seg_blend(image_seg)
 
     def set_navigation(self, t: int, t_max: int, z: int, z_max: int) -> None:
@@ -120,7 +117,7 @@ class VolumeView(QMainWindow):
     label_id_changed = Signal(int)
     label_visibility_changed = Signal()
     t_index_changed = Signal(int)
-    primary_secondary_blend_changed = Signal(int)
+    channel_weights_changed = Signal(list)
     image_seg_blend_changed = Signal(int)
     closed = Signal()
 
@@ -131,7 +128,7 @@ class VolumeView(QMainWindow):
         self._canvas = VolumeCanvas()
         self._viewer = VolumeViewerFrame(self._canvas)
         self._viewer.t_index_changed.connect(self.t_index_changed.emit)
-        self._viewer.primary_secondary_blend_changed.connect(self.primary_secondary_blend_changed.emit)
+        self._viewer.channel_weights_changed.connect(self.channel_weights_changed.emit)
         self._viewer.image_seg_blend_changed.connect(self.image_seg_blend_changed.emit)
         self.setCentralWidget(self._viewer)
         self._build_actions()
@@ -227,17 +224,15 @@ class VolumeView(QMainWindow):
         self,
         *,
         visible: bool,
-        primary_secondary: int,
+        channel_names: list[str],
+        channel_weights: list[float],
         image_seg: int,
-        show_primary_secondary: bool,
-        channel_name: str = "",
     ) -> None:
         self._viewer.set_blend_controls(
             visible=visible,
-            primary_secondary=primary_secondary,
+            channel_names=channel_names,
+            channel_weights=channel_weights,
             image_seg=image_seg,
-            show_primary_secondary=show_primary_secondary,
-            channel_name=channel_name,
         )
 
     def ask_open_folder_path(self) -> str | None:
