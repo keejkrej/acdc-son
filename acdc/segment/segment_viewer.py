@@ -10,9 +10,9 @@ from acdc.app import exec_until_closed, get_qapp
 from acdc.core.data import AcdcData, AcdcResult, coalesce_images
 
 if TYPE_CHECKING:
-    from acdc.segment.model import SegmentationModel
-    from acdc.segment.presenter import SegmentationPresenter
-    from acdc.segment.view import SegmentationView
+    from acdc.segment.segment_model import SegmentationModel
+    from acdc.segment.segment_presenter import SegmentationPresenter
+    from acdc.segment.segment_view import SegmentationView
 
 _current_viewer: SegmentationViewer | None = None
 
@@ -24,9 +24,9 @@ class SegmentationViewer:
 
     def __init__(self, *, show: bool = False) -> None:
         get_qapp()
-        from acdc.segment.model import SegmentationModel
-        from acdc.segment.presenter import SegmentationPresenter
-        from acdc.segment.view import SegmentationView
+        from acdc.segment.segment_model import SegmentationModel
+        from acdc.segment.segment_presenter import SegmentationPresenter
+        from acdc.segment.segment_view import SegmentationView
 
         self._model = SegmentationModel()
         self._view = SegmentationView()

@@ -7,7 +7,8 @@ import numpy as np
 from acdc.core.data import AcdcData, AcdcResult
 from acdc.core import io, stack
 from acdc.segment import editing
-from acdc.segment.model import SegmentationModel
+from acdc.segment.segment_model import SegmentationModel
+from acdc.ui.lut import lut_with_hidden_labels
 
 
 def test_apply_brush_and_save_roundtrip(tmp_path: Path) -> None:
@@ -69,8 +70,6 @@ def test_apply_label_visibility() -> None:
 
 
 def test_lut_with_hidden_labels() -> None:
-    from acdc.segment.lut import lut_with_hidden_labels
-
     lut = np.zeros((8, 4), dtype=np.uint8)
     lut[1] = (255, 0, 0, 128)
     lut[2] = (0, 255, 0, 128)

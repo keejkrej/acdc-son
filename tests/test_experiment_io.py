@@ -11,7 +11,7 @@ from acdc.core.data import AcdcData, AcdcResult
 from acdc.core import experiment, io, metadata, stack
 from acdc.core.stack import shape_from_metadata
 from acdc.segment import editing
-from acdc.segment.model import SegmentationModel
+from acdc.segment.segment_model import SegmentationModel
 
 
 def _write_metadata(

@@ -68,7 +68,7 @@ def test_run_segment_middleware_blocks_until_close() -> None:
     ctx = from_arrays([imaged], AcdcResult.empty_like(imaged))
 
     def close_window() -> None:
-        from acdc.segment.viewer import current_viewer
+        from acdc.segment.segment_viewer import current_viewer
 
         viewer = current_viewer()
         assert viewer is not None
@@ -84,7 +84,7 @@ def test_run_volume_middleware_blocks_until_close() -> None:
     ctx = from_arrays([imaged], AcdcResult.empty_like(imaged))
 
     def close_window() -> None:
-        from acdc.volume.viewer import current_volume_viewer
+        from acdc.volume.volume_viewer import current_volume_viewer
 
         viewer = current_volume_viewer()
         assert viewer is not None

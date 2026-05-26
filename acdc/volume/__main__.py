@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 from acdc.app import run
-from acdc.volume.viewer import VolumeViewer
+from acdc.volume.volume_viewer import VolumeViewer
 
 
 def main() -> None:

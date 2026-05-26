@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from acdc.core.data import AcdcData, coalesce_images
-from acdc.segment.model import SegmentationModel
-from acdc.volume.model import VolumeModel
+from acdc.segment.segment_model import SegmentationModel
+from acdc.volume.volume_model import VolumeModel
 from tests.test_experiment_io import _make_position
 
 

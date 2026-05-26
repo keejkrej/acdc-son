@@ -1,47 +1,13 @@
-"""LUT bars for image and segmentation display (Cell-ACDC-style)."""
+"""2D segmentation LUT bars linked to pyqtgraph image items."""
 
 from __future__ import annotations
 
 import numpy as np
 import pyqtgraph as pg
 
-_LABEL_ALPHA = int(round(0.45 * 255))
+from acdc.ui.lut import LABEL_ALPHA, BaseLutBar
+
 _DEFAULT_LUT_SIZE = 2
-
-
-def lut_with_hidden_labels(lut: np.ndarray, hidden_ids: set[int]) -> np.ndarray:
-    """Return a copy of ``lut`` with ``hidden_ids`` entries fully transparent."""
-    if not hidden_ids:
-        return lut
-    out = np.array(lut, copy=True)
-    for label_id in hidden_ids:
-        if 0 <= label_id < len(out):
-            out[label_id] = (0, 0, 0, 0)
-    return out
-
-
-class BaseLutBar(pg.HistogramLUTItem):
-    """Vertical LUT bar with histogram hidden (gradient only)."""
-
-    _LABEL_STYLE = {"color": "#ffffff", "font-size": "11px"}
-
-    def __init__(
-        self,
-        *,
-        axis_label: str = "",
-        gradient_position: str = "right",
-    ) -> None:
-        super().__init__(
-            fillHistogram=False,
-            gradientPosition=gradient_position,
-            orientation="vertical",
-        )
-        self.vb.hide()
-        self.axis.unlinkFromView()
-        self.setMinimumWidth(95)
-        self.setMaximumWidth(115)
-        if axis_label:
-            self.axis.setLabel(axis_label, **self._LABEL_STYLE)
 
 
 class ImageLutBar(BaseLutBar):
@@ -78,7 +44,7 @@ class SegmentationLutBar(BaseLutBar):
 
     def current_lut(self) -> np.ndarray:
         lut = np.array(
-            self.gradient.getLookupTable(self._lut_size, alpha=_LABEL_ALPHA),
+            self.gradient.getLookupTable(self._lut_size, alpha=LABEL_ALPHA),
             copy=True,
         )
         lut[0] = (0, 0, 0, 0)
@@ -93,7 +59,7 @@ class SegmentationLutBar(BaseLutBar):
 
     def _apply_lut(self) -> None:
         lut = np.array(
-            self.gradient.getLookupTable(self._lut_size, alpha=_LABEL_ALPHA),
+            self.gradient.getLookupTable(self._lut_size, alpha=LABEL_ALPHA),
             copy=True,
         )
         lut[0] = (0, 0, 0, 0)

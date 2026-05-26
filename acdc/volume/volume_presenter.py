@@ -7,17 +7,17 @@ from pathlib import Path
 
 from qtpy.QtWidgets import QMessageBox
 
-from acdc.utils.channels import channel_display_name
 from acdc.core.data import AcdcData, AcdcResult
-from acdc.core import experiment
-from acdc.volume.model import VolumeModel
+from acdc.ui.open_experiment import pick_experiment_images
+from acdc.utils.channels import channel_display_name
 from acdc.volume.prepare import (
     label_volume_for_vispy,
     mask_volume_zyx,
     normalize_image_stack_volume,
     volume_zyx,
 )
-from acdc.volume.view import VolumeView
+from acdc.volume.volume_model import VolumeModel
+from acdc.volume.volume_view import VolumeView
 
 
 class VolumePresenter:
@@ -76,47 +76,11 @@ class VolumePresenter:
         )
 
     def _on_open_folder(self) -> None:
-        path = self._view.ask_open_folder_path()
-        if not path:
+        picked = pick_experiment_images(self._view, self._view)
+        if picked is None:
             return
+        _images_path, images = picked
         try:
-            images_paths = experiment.resolve_images_paths(Path(path))
-        except Exception as exc:
-            QMessageBox.critical(self._view, "Open failed", str(exc))
-            return
-
-        if len(images_paths) > 1:
-            position_names = experiment.list_positions(Path(path))
-            if not position_names:
-                position_names = [
-                    experiment.position_name_from_images_path(p) or p.parent.name
-                    for p in images_paths
-                ]
-            picked = self._view.ask_pick_position(position_names)
-            if not picked:
-                return
-            try:
-                images_path = experiment.images_path_for_position(
-                    Path(path), images_paths, picked
-                )
-            except ValueError as exc:
-                QMessageBox.critical(self._view, "Open failed", str(exc))
-                return
-        else:
-            images_path = images_paths[0]
-
-        try:
-            _basename, channel_names = experiment.discover_basename_and_channels(images_path)
-        except Exception as exc:
-            QMessageBox.critical(self._view, "Open failed", str(exc))
-            return
-
-        channels = self._view.ask_pick_channels(channel_names)
-        if not channels:
-            return
-
-        try:
-            images = AcdcData.from_experiment(images_path, channels=channels)
             self.open(images)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))

@@ -15,7 +15,7 @@ from acdc.core.data import (
 )
 from acdc.core import io
 from acdc.core import stack
-from acdc.segment.model import SegmentationModel
+from acdc.segment.segment_model import SegmentationModel
 
 
 def test_imaged_from_arrays() -> None:
@@ -112,7 +112,7 @@ def test_apply_brush_stroke_on_bound_result() -> None:
 
 
 def test_segmentation_viewer_open_binds_result() -> None:
-    from acdc.segment.viewer import SegmentationViewer
+    from acdc.segment.segment_viewer import SegmentationViewer
 
     imaged = AcdcData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
     result = AcdcResult.empty_like(imaged)
@@ -126,7 +126,7 @@ def test_segmentation_viewer_open_binds_result() -> None:
 def test_run_segment_returns_images_and_segmentation() -> None:
     from qtpy.QtCore import QTimer
 
-    from acdc.segment.viewer import current_viewer, run_segment
+    from acdc.segment.segment_viewer import current_viewer, run_segment
 
     imaged = AcdcData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
     result = AcdcResult.empty_like(imaged)
@@ -145,7 +145,7 @@ def test_run_segment_returns_images_and_segmentation() -> None:
 def test_run_volume_returns_images_and_segmentation() -> None:
     from qtpy.QtCore import QTimer
 
-    from acdc.volume.viewer import current_volume_viewer, run_volume
+    from acdc.volume.volume_viewer import current_volume_viewer, run_volume
 
     image = np.zeros((4, 8, 8), dtype=np.uint16)
     imaged = AcdcData.from_arrays(image)
@@ -163,7 +163,7 @@ def test_run_volume_returns_images_and_segmentation() -> None:
 
 
 def test_volume_accepts_channel_list() -> None:
-    from acdc.volume.viewer import VolumeViewer
+    from acdc.volume.volume_viewer import VolumeViewer
 
     primary = AcdcData.from_arrays(np.zeros((4, 8, 8), dtype=np.uint16))
     overlay = AcdcData.from_arrays(np.ones((4, 8, 8), dtype=np.uint16) * 100, name="gfp")
@@ -194,7 +194,7 @@ def test_load_returns_images_and_segmentation(tmp_path: Path) -> None:
 
 
 def test_volume_viewer_open_without_show() -> None:
-    from acdc.volume.viewer import VolumeViewer
+    from acdc.volume.volume_viewer import VolumeViewer
 
     image = np.zeros((4, 8, 8), dtype=np.uint16)
     image[:, 3:5, 3:5] = 500

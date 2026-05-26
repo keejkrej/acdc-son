@@ -3,8 +3,8 @@
 from acdc.app import get_qapp, run
 from acdc.core.data import AcdcData, AcdcResult
 from acdc.middleware import AcdcContext
-from acdc.segment.viewer import SegmentationViewer, current_viewer
-from acdc.volume.viewer import VolumeViewer, current_volume_viewer
+from acdc.segment.segment_viewer import SegmentationViewer, current_viewer
+from acdc.volume.volume_viewer import VolumeViewer, current_volume_viewer
 
 __all__ = [
     "AcdcContext",

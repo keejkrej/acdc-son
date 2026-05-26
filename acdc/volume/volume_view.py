@@ -20,7 +20,7 @@ from qtpy.QtWidgets import (
 from acdc.ui.blend_controls import BlendControlBar
 from acdc.ui.dialogs import pick_from_list, pick_many_from_list
 from acdc.ui.icons import LucideIcon, install_icon_theme_watcher, themed_lucide_qicon
-from acdc.segment.view import LabelListPanel
+from acdc.ui.label_list import LabelListPanel
 from acdc.volume.canvas import VolumeCanvas
 
 
@@ -145,7 +145,7 @@ class VolumeView(QMainWindow):
         self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
 
     def _build_actions(self) -> None:
-        self._open_folder_act = QAction("Open folder…", self)
+        self._open_folder_act = QAction("Open experiment…", self)
         self._open_folder_act.setIcon(themed_lucide_qicon(LucideIcon.FOLDER_OPEN))
         self._open_folder_act.setShortcut("Ctrl+O")
         self._open_folder_act.triggered.connect(self.open_folder_requested.emit)

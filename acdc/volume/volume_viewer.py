@@ -10,9 +10,9 @@ from acdc.app import exec_until_closed, get_qapp
 from acdc.core.data import AcdcData, AcdcResult, coalesce_images
 
 if TYPE_CHECKING:
-    from acdc.volume.model import VolumeModel
-    from acdc.volume.presenter import VolumePresenter
-    from acdc.volume.view import VolumeView
+    from acdc.volume.volume_model import VolumeModel
+    from acdc.volume.volume_presenter import VolumePresenter
+    from acdc.volume.volume_view import VolumeView
 
 _current_volume_viewer: VolumeViewer | None = None
 
@@ -24,9 +24,9 @@ class VolumeViewer:
 
     def __init__(self, *, show: bool = False) -> None:
         get_qapp()
-        from acdc.volume.model import VolumeModel
-        from acdc.volume.presenter import VolumePresenter
-        from acdc.volume.view import VolumeView
+        from acdc.volume.volume_model import VolumeModel
+        from acdc.volume.volume_presenter import VolumePresenter
+        from acdc.volume.volume_view import VolumeView
 
         self._model = VolumeModel()
         self._view = VolumeView()

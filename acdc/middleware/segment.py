@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 
 from acdc.core.data import AcdcData, AcdcResult, coalesce_images
 from acdc.middleware.context import AcdcContext
-from acdc.segment.viewer import run_segment as open_segment
+from acdc.segment.segment_viewer import run_segment as open_segment
 
 
 def run_segment(ctx: AcdcContext, next_: Callable[[], None]) -> None:

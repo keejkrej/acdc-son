@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from acdc.segment.lut import BaseLutBar, lut_with_hidden_labels
+from acdc.ui.lut import LABEL_ALPHA, BaseLutBar, lut_with_hidden_labels
 
-_LABEL_ALPHA = int(round(0.45 * 255))
+__all__ = ["VolumeImageLutBar", "VolumeLabelLutBar", "lut_with_hidden_labels"]
 
 
 class VolumeImageLutBar(BaseLutBar):
@@ -40,7 +40,7 @@ class VolumeLabelLutBar(BaseLutBar):
 
     def rgba_lut(self, hidden_ids: set[int] | None = None) -> np.ndarray:
         lut = np.array(
-            self.gradient.getLookupTable(self._lut_size, alpha=_LABEL_ALPHA),
+            self.gradient.getLookupTable(self._lut_size, alpha=LABEL_ALPHA),
             copy=True,
         )
         lut[0] = (0, 0, 0, 0)

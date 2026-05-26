@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from acdc.middleware.context import AcdcContext
-from acdc.volume.viewer import run_volume as open_volume
+from acdc.volume.volume_viewer import run_volume as open_volume
 
 
 def run_volume(ctx: AcdcContext, next_: Callable[[], None]) -> None:
