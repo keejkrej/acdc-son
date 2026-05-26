@@ -9,6 +9,7 @@ from qtpy.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from acdc.blend import layer_opacities
 from acdc.volume.cmaps import label_lut_to_vispy, pg_colormap_to_vispy
+from acdc.volume.gl_blend import volume_gl_state
 from acdc.volume.lut import VolumeImageLutBar, VolumeLabelLutBar
 from acdc.volume.prepare import voxel_display_scale
 
@@ -183,7 +184,7 @@ class VolumeCanvas(QWidget):
         import os
 
         import vispy
-        from vispy import gloo, scene
+        from vispy import scene
         from vispy.scene import visuals
 
         os.environ.setdefault("QT_API", "pyside6")
@@ -229,7 +230,10 @@ class VolumeCanvas(QWidget):
             parent=scene_root,
         )
         self._label_node.visible = False
-        gloo.set_state(blend=True, depth_test=False)
+        self._image_node.order = 0
+        self._secondary_node.order = 1
+        self._label_node.order = 2
+        self._apply_volume_gl_blend()
         self._vispy_ready = True
 
     def _schedule_fit_camera(self) -> None:
@@ -308,8 +312,48 @@ class VolumeCanvas(QWidget):
             self._secondary_node.opacity = secondary_opacity
         if self._label_node is not None and self._label_node.visible:
             self._label_node.opacity = seg_opacity
+        self._apply_volume_gl_blend()
         if self._canvas is not None:
             self._canvas.update()
+
+    def _apply_volume_gl_blend(self) -> None:
+        """Composite fluor MIP volumes like napari (translucent + additive)."""
+        if not self._vispy_ready:
+            return
+        assert self._image_node is not None
+        assert self._secondary_node is not None
+        assert self._label_node is not None
+
+        def _active(node, opacity: float) -> bool:
+            return bool(node.visible) and opacity > 1e-6
+
+        primary_opacity = float(self._image_node.opacity)
+        secondary_opacity = (
+            float(self._secondary_node.opacity)
+            if self._has_secondary and self._secondary_node.visible
+            else 0.0
+        )
+        primary_active = _active(self._image_node, primary_opacity)
+        secondary_active = _active(self._secondary_node, secondary_opacity)
+
+        # First contributing fluor layer uses napari's bottom-layer blend func.
+        self._image_node.set_gl_state(
+            **volume_gl_state(
+                "translucent_no_depth",
+                first_visible=primary_active,
+            )
+        )
+        if self._has_secondary:
+            self._secondary_node.set_gl_state(
+                **volume_gl_state(
+                    "additive",
+                    first_visible=secondary_active and not primary_active,
+                )
+            )
+
+        self._label_node.set_gl_state(
+            **volume_gl_state("translucent", first_visible=False)
+        )
 
     def _on_image_lut_changed(self) -> None:
         if self._image_node is not None:
