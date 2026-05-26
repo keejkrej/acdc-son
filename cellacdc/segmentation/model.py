@@ -12,7 +12,7 @@ from cellacdc.overlay import SecondaryChannel
 from . import experiment, io, tools
 
 if TYPE_CHECKING:
-    from cellacdc.data import ImagedData, SegmentationResult
+    from cellacdc.data import ImageData, SegmentationResult
 
 
 class SegmentationModel:
@@ -68,7 +68,7 @@ class SegmentationModel:
     def has_data(self) -> bool:
         return self.image is not None and self.mask is not None and self.layout is not None
 
-    def open(self, imaged: ImagedData, result: SegmentationResult) -> None:
+    def open(self, imaged: ImageData, result: SegmentationResult) -> None:
         """Bind in-memory image input and a live segmentation result."""
         if result.mask.shape != imaged.image.shape:
             raise ValueError(

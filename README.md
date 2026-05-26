@@ -45,22 +45,22 @@ Load data and open the 2D segmentation or 3D volume viewer without mandatory fil
 ```python
 import cellacdc
 
-data = cellacdc.ImagedData.from_path("/path/to/experiment", channel="phase")
-result = cellacdc.SegmentationResult.empty_like(data)
+image = cellacdc.ImageData.from_path("/path/to/experiment", channel="phase")
+segmentation = cellacdc.SegmentationResult.empty_like(image)
 
 # 2D manual segmentation
-viewer, result = cellacdc.imshow(data, result=result)
+viewer, segmentation = cellacdc.imshow(image, segmentation)
 cellacdc.run()
 
 # 3D volume overlay (read-only)
-viewer3d, result = cellacdc.imshow3d(data, result=result)
+viewer3d, segmentation = cellacdc.imshow3d(image, segmentation)
 cellacdc.run()
 ```
 
-- **`ImagedData`** (`Experiment` / `ExperimentData` aliases) — read-only image volume + layout metadata
+- **`ImageData`** (`Experiment` / `ExperimentData` aliases) — read-only image volume + layout metadata
 - **`SegmentationResult`** — label mask (`uint32`); edited in 2D, overlaid in 3D
 - **`SegmentationViewer`** / **`VolumeViewer`** — core viewer objects
-- **`imshow` / `imshow3d`** — convenience wrappers returning `(viewer, result)`
+- **`imshow(image, segmentation, ...)` / `imshow3d(image, segmentation, ...)`** — convenience wrappers returning `(viewer, segmentation)`
 - **`run()`** — Qt event loop (`uv run acdc-seg` or `uv run acdc-3d`)
 
 3D viewer: dual LUT bars (image grey, labels viridis) and an **Image ↔ Segmentation** blend slider; vispy default volume rendering only (no exposed render controls).
@@ -70,17 +70,21 @@ cellacdc.run()
 ```
 cellacdc/
   __init__.py              # Public API
-  data.py                  # ImagedData + SegmentationResult
-  viewer.py                # 2D SegmentationViewer, imshow, run
-  volume/                  # 3D VolumeViewer, imshow3d (vispy)
+  app.py                   # get_qapp, run
+  data.py                  # ImageData + SegmentationResult
+  viewer.py                # Back-compat re-exports for 2D viewer
   __main__.py              # acdc-seg CLI
   segmentation/
+    viewer.py              # SegmentationViewer, imshow
     model.py               # Editing state (binds to SegmentationResult)
     view.py                # Qt / pyqtgraph UI
     presenter.py           # MVP wiring
     experiment.py          # Cell-ACDC folder discovery
     io.py                  # Cell-ACDC mask format
     tools.py               # Brush math and stack helpers
+  volume/
+    viewer.py              # VolumeViewer, imshow (vispy)
+    __main__.py            # acdc-3d CLI
 ```
 
 ## License

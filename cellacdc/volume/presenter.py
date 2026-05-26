@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from qtpy.QtWidgets import QMessageBox
 
-from cellacdc.data import ImagedData, SegmentationResult
+from cellacdc.data import ImageData, SegmentationResult
 from cellacdc.segmentation import experiment
 from cellacdc.volume.model import VolumeModel
 from cellacdc.volume.prepare import (
@@ -45,7 +45,7 @@ class VolumePresenter:
 
     def open(
         self,
-        imaged: ImagedData,
+        imaged: ImageData,
         result: SegmentationResult | None = None,
         *,
         t_index: int = 0,
@@ -163,7 +163,7 @@ class VolumePresenter:
             return
 
         try:
-            imaged = ImagedData.from_path(images_path, channel=channel)
+            imaged = ImageData.from_path(images_path, channel=channel)
             self.open(imaged)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
@@ -173,7 +173,7 @@ class VolumePresenter:
         if not path:
             return
         try:
-            imaged = ImagedData.from_image_path(Path(path))
+            imaged = ImageData.from_image_path(Path(path))
             self.open(imaged)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))

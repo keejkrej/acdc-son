@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from cellacdc.data import ImagedData, SegmentationResult
+from cellacdc.data import ImageData, SegmentationResult
 from cellacdc.display_levels import autoscale_levels, scale_to_unit, stack_display_levels
 from cellacdc.segmentation import tools
 
@@ -22,7 +22,7 @@ def array_volume_zyx(
 
 
 def volume_zyx(
-    imaged: ImagedData,
+    imaged: ImageData,
     *,
     t_index: int = 0,
 ) -> np.ndarray:

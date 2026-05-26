@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from cellacdc.data import ImagedData, SegmentationResult, default_segmentation
+from cellacdc.data import ImageData, SegmentationResult, default_segmentation
 from cellacdc.display_levels import stack_display_levels
 from cellacdc.overlay import SecondaryChannel
 
@@ -13,7 +13,7 @@ class VolumeModel:
     """Holds loaded image/mask volumes for 3D display."""
 
     def __init__(self) -> None:
-        self.imaged: ImagedData | None = None
+        self.imaged: ImageData | None = None
         self.result: SegmentationResult | None = None
         self.t_index = 0
         self.label_id = 1
@@ -29,7 +29,7 @@ class VolumeModel:
     def has_data(self) -> bool:
         return self.imaged is not None and self.result is not None
 
-    def bind(self, imaged: ImagedData, result: SegmentationResult | None = None) -> SegmentationResult:
+    def bind(self, imaged: ImageData, result: SegmentationResult | None = None) -> SegmentationResult:
         mask = result if result is not None else default_segmentation(imaged)
         self.imaged = imaged
         self.result = mask

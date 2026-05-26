@@ -1,18 +1,19 @@
 """Cell-ACDC minimal manual segmentation GUI."""
 
+from cellacdc.app import get_qapp, run
 from cellacdc.data import (
     Experiment,
     ExperimentData,
-    ImagedData,
+    ImageData,
     SegmentationResult,
 )
-from cellacdc.viewer import SegmentationViewer, current_viewer, get_qapp, imshow, run
-from cellacdc.volume import VolumeViewer, current_volume_viewer, imshow as imshow3d
+from cellacdc.segmentation.viewer import SegmentationViewer, current_viewer, imshow
+from cellacdc.volume.viewer import VolumeViewer, current_volume_viewer, imshow as imshow3d
 
 __all__ = [
     "Experiment",
     "ExperimentData",
-    "ImagedData",
+    "ImageData",
     "SegmentationResult",
     "SegmentationViewer",
     "VolumeViewer",

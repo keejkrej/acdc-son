@@ -53,7 +53,7 @@ class SegmentationPresenter:
         self._view.show()
 
     def open(self, experiment, result) -> None:
-        """Load programmatic ``ImagedData`` + ``SegmentationResult`` into the viewer."""
+        """Load programmatic ``ImageData`` + ``SegmentationResult`` into the viewer."""
         self._model.open(experiment, result)
         self._view.reset_label_visibility()
         self._selected_label_ids = []

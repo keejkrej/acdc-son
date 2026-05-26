@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from cellacdc.data import Experiment, ExperimentData, ImagedData
+from cellacdc.data import Experiment, ExperimentData, ImageData
 from cellacdc.segmentation import tools
 from cellacdc.volume.prepare import (
     label_volume_for_vispy,
@@ -18,14 +18,14 @@ from cellacdc.volume.prepare import (
 
 
 def test_imaged_data_aliases() -> None:
-    assert Experiment is ImagedData
-    assert ExperimentData is ImagedData
+    assert Experiment is ImageData
+    assert ExperimentData is ImageData
 
 
 def test_volume_zyx_from_zstack() -> None:
     image = np.zeros((8, 16, 16), dtype=np.uint8)
     image[3, 8, 8] = 100
-    imaged = ImagedData.from_arrays(image)
+    imaged = ImageData.from_arrays(image)
     vol = volume_zyx(imaged)
     assert vol.shape == (8, 16, 16)
     assert vol[3, 8, 8] == 100
@@ -36,7 +36,7 @@ def test_mask_volume_zyx_matches_image_layout() -> None:
     mask = np.zeros((4, 10, 10), dtype=np.uint32)
     mask[1, 5, 5] = 2
     layout = tools.infer_layout(image.shape)
-    imaged = ImagedData(image=image, layout=layout)
+    imaged = ImageData(image=image, layout=layout)
     from cellacdc.data import SegmentationResult
 
     result = SegmentationResult(mask)

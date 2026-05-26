@@ -4,6 +4,9 @@ __all__ = [
     "SegmentationModel",
     "SegmentationPresenter",
     "SegmentationView",
+    "SegmentationViewer",
+    "current_viewer",
+    "imshow",
 ]
 
 
@@ -20,4 +23,8 @@ def __getattr__(name: str):
         from .view import SegmentationView
 
         return SegmentationView
+    if name in {"SegmentationViewer", "current_viewer", "imshow"}:
+        from . import viewer as viewer_module
+
+        return getattr(viewer_module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

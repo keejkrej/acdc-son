@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import sys
 
-from cellacdc.viewer import run
-from cellacdc.volume import VolumeViewer
+from cellacdc.app import run
+from cellacdc.volume.viewer import VolumeViewer
 
 
 def main() -> None:

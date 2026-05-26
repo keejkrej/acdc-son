@@ -1,12 +1,12 @@
-"""3D volume viewer entry points (parallel to ``cellacdc.viewer``)."""
+"""3D volume viewer entry points."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 from weakref import WeakSet
 
-from cellacdc.data import ImagedData, SegmentationResult
-from cellacdc.viewer import get_qapp
+from cellacdc.app import get_qapp
+from cellacdc.data import ImageData, SegmentationResult
 
 if TYPE_CHECKING:
     from cellacdc.volume.model import VolumeModel
@@ -17,7 +17,7 @@ _current_volume_viewer: VolumeViewer | None = None
 
 
 class VolumeViewer:
-    """Read-only 3D viewer for ``ImagedData`` with ``SegmentationResult`` overlay."""
+    """Read-only 3D viewer for ``ImageData`` with ``SegmentationResult`` overlay."""
 
     _instances: ClassVar[WeakSet[VolumeViewer]] = WeakSet()
 
@@ -43,6 +43,10 @@ class VolumeViewer:
         return self._view
 
     @property
+    def view(self) -> VolumeView:
+        return self._view
+
+    @property
     def presenter(self) -> VolumePresenter:
         return self._presenter
 
@@ -51,7 +55,7 @@ class VolumeViewer:
         return self._model.result
 
     @property
-    def imaged(self) -> ImagedData | None:
+    def imaged(self) -> ImageData | None:
         return self._model.imaged
 
     @property
@@ -60,12 +64,12 @@ class VolumeViewer:
 
     def open(
         self,
-        imaged: ImagedData,
+        image: ImageData,
+        segmentation: SegmentationResult | None = None,
         *,
-        result: SegmentationResult | None = None,
         t_index: int = 0,
     ) -> SegmentationResult:
-        return self._presenter.open(imaged, result, t_index=t_index)
+        return self._presenter.open(image, segmentation, t_index=t_index)
 
     def show(self) -> None:
         global _current_volume_viewer
@@ -82,16 +86,16 @@ def current_volume_viewer() -> VolumeViewer | None:
 
 
 def imshow(
-    data: ImagedData,
+    image: ImageData,
+    segmentation: SegmentationResult | None = None,
     *,
-    result: SegmentationResult | None = None,
     viewer: VolumeViewer | None = None,
     show: bool = True,
     t_index: int = 0,
 ) -> tuple[VolumeViewer, SegmentationResult]:
-    """Open ``data`` in the 3D volume viewer and return ``(viewer, result)``."""
+    """Open ``image`` in the 3D volume viewer and return ``(viewer, segmentation)``."""
     target = viewer if viewer is not None else VolumeViewer()
-    mask_result = target.open(data, result=result, t_index=t_index)
+    mask_result = target.open(image, segmentation, t_index=t_index)
     if show:
         target.show()
     return target, mask_result

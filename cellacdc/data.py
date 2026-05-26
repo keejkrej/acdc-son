@@ -11,7 +11,7 @@ from cellacdc.segmentation import experiment, io, tools
 
 
 @dataclass(frozen=True)
-class ImagedData:
+class ImageData:
     """Read-only microscopy image volume plus layout metadata."""
 
     image: np.ndarray
@@ -34,7 +34,7 @@ class ImagedData:
         *,
         position: str | None = None,
         channel: str | None = None,
-    ) -> ImagedData:
+    ) -> ImageData:
         """Load from a Cell-ACDC experiment, position, Images, or image file path."""
         path = Path(path)
         if path.is_file():
@@ -83,7 +83,7 @@ class ImagedData:
         )
 
     @classmethod
-    def from_image_path(cls, path: str | Path) -> ImagedData:
+    def from_image_path(cls, path: str | Path) -> ImageData:
         """Load a single TIFF/NPY/NPZ file outside a full experiment tree."""
         path = Path(path)
         image = io.load_image(path)
@@ -118,7 +118,7 @@ class ImagedData:
         size_t: int | None = None,
         size_z: int | None = None,
         title: str = "",
-    ) -> ImagedData:
+    ) -> ImageData:
         """Wrap an in-memory array (no filesystem)."""
         image = np.asarray(image)
         layout = tools.layout_from_metadata(image.shape, size_t, size_z)
@@ -139,14 +139,14 @@ class SegmentationResult:
         self.dirty = False
 
     @classmethod
-    def empty_like(cls, imaged: ImagedData) -> SegmentationResult:
+    def empty_like(cls, imaged: ImageData) -> SegmentationResult:
         return cls(
             io.empty_mask_like(imaged.image),
             save_path=imaged.mask_path,
         )
 
     @classmethod
-    def from_path(cls, path: str | Path, *, like: ImagedData) -> SegmentationResult:
+    def from_path(cls, path: str | Path, *, like: ImageData) -> SegmentationResult:
         path = Path(path)
         mask = io.load_mask(path)
         if mask.shape != like.image.shape:
@@ -166,7 +166,7 @@ class SegmentationResult:
         return dest
 
 
-def default_segmentation(imaged: ImagedData) -> SegmentationResult:
+def default_segmentation(imaged: ImageData) -> SegmentationResult:
     """Return an on-disk mask when present, otherwise an empty mask."""
     if imaged.mask_path is not None and imaged.mask_path.is_file():
         try:
@@ -176,5 +176,5 @@ def default_segmentation(imaged: ImagedData) -> SegmentationResult:
     return SegmentationResult.empty_like(imaged)
 
 
-Experiment = ImagedData
-ExperimentData = ImagedData
+Experiment = ImageData
+ExperimentData = ImageData

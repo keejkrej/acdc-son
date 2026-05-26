@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sys
 
-from cellacdc.viewer import SegmentationViewer, run
+from cellacdc.app import run
+from cellacdc.segmentation.viewer import SegmentationViewer
 
 
 def main() -> None:

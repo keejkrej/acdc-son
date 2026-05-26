@@ -61,10 +61,10 @@ def test_segmentation_model_secondary_overlay(tmp_path: Path) -> None:
 
 
 def test_volume_model_clears_secondary_on_bind(tmp_path: Path) -> None:
-    from cellacdc.data import ImagedData
+    from cellacdc.data import ImageData
 
     images = _make_position(tmp_path, "Position_1")
-    imaged = ImagedData.from_path(images, channel="phase")
+    imaged = ImageData.from_path(images, channel="phase")
     model = VolumeModel()
     model.bind(imaged)
     model.load_secondary_channel("gfp")
