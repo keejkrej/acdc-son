@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 from weakref import WeakSet
 
@@ -39,10 +40,6 @@ class VolumeViewer:
         return self._model
 
     @property
-    def window(self) -> VolumeView:
-        return self._view
-
-    @property
     def view(self) -> VolumeView:
         return self._view
 
@@ -55,8 +52,8 @@ class VolumeViewer:
         return self._model.result
 
     @property
-    def imaged(self) -> ImageData | None:
-        return self._model.imaged
+    def primary(self) -> ImageData | None:
+        return self._model.primary
 
     @property
     def canvas(self):
@@ -64,12 +61,12 @@ class VolumeViewer:
 
     def open(
         self,
-        image: ImageData,
+        images: Sequence[ImageData],
         segmentation: SegmentationResult | None = None,
         *,
         t_index: int = 0,
     ) -> SegmentationResult:
-        return self._presenter.open(image, segmentation, t_index=t_index)
+        return self._presenter.open(images, segmentation, t_index=t_index)
 
     def show(self) -> None:
         global _current_volume_viewer
@@ -86,16 +83,16 @@ def current_volume_viewer() -> VolumeViewer | None:
 
 
 def imshow(
-    image: ImageData,
+    images: Sequence[ImageData],
     segmentation: SegmentationResult | None = None,
     *,
     viewer: VolumeViewer | None = None,
     show: bool = True,
     t_index: int = 0,
 ) -> tuple[VolumeViewer, SegmentationResult]:
-    """Open ``image`` in the 3D volume viewer and return ``(viewer, segmentation)``."""
+    """Open ``images`` in the 3D volume viewer and return ``(viewer, segmentation)``."""
     target = viewer if viewer is not None else VolumeViewer()
-    mask_result = target.open(image, segmentation, t_index=t_index)
+    mask_result = target.open(images, segmentation, t_index=t_index)
     if show:
         target.show()
     return target, mask_result

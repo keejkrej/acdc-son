@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 from weakref import WeakSet
 
 from cellacdc.app import get_qapp
-from cellacdc.data import ImageData, SegmentationResult, default_segmentation
+from cellacdc.data import ImageData, SegmentationResult, coalesce_images, default_segmentation
 
 if TYPE_CHECKING:
     from cellacdc.segmentation.model import SegmentationModel
@@ -53,14 +54,16 @@ class SegmentationViewer:
 
     def open(
         self,
-        image: ImageData,
+        images: Sequence[ImageData],
         segmentation: SegmentationResult | None = None,
     ) -> SegmentationResult:
-        """Bind ``image`` and a live ``segmentation`` mask to this viewer."""
+        """Bind ``images`` channel(s) and a live ``segmentation`` mask to this viewer."""
+        image_list = coalesce_images(images)
+        primary = image_list[0]
         mask_result = (
-            segmentation if segmentation is not None else default_segmentation(image)
+            segmentation if segmentation is not None else default_segmentation(primary)
         )
-        self._presenter.open(image, mask_result)
+        self._presenter.open(list(image_list), mask_result)
         self._result = mask_result
         return mask_result
 
@@ -81,15 +84,15 @@ def current_viewer() -> SegmentationViewer | None:
 
 
 def imshow(
-    image: ImageData,
+    images: Sequence[ImageData],
     segmentation: SegmentationResult | None = None,
     *,
     viewer: SegmentationViewer | None = None,
     show: bool = True,
 ) -> tuple[SegmentationViewer, SegmentationResult]:
-    """Open ``image`` in the 2D segmentation viewer and return ``(viewer, segmentation)``."""
+    """Open ``images`` in the 2D segmentation viewer and return ``(viewer, segmentation)``."""
     target = viewer if viewer is not None else SegmentationViewer()
-    mask_result = target.open(image, segmentation)
+    mask_result = target.open(images, segmentation)
     if show:
         target.show()
     return target, mask_result

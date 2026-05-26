@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-acdc-seg = "cellacdc.__main__:main"
+acdc-seg = "cellacdc.segmentation.__main__:main"
 acdc-3d = "cellacdc.volume.__main__:main"
 
 [build-system]

@@ -1,4 +1,4 @@
-"""Tests for optional secondary channel overlay loading."""
+"""Tests for multi-channel overlay loading."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ import numpy as np
 import pytest
 import tifffile
 
-from cellacdc.overlay import list_sibling_channels, load_channel_image
+from cellacdc.data import ImageData, coalesce_images
+from cellacdc.overlay import (
+    list_sibling_channels,
+    load_channel_image,
+    overlay_slice_at,
+    overlay_stack_array,
+)
 from cellacdc.segmentation import io, tools
 from cellacdc.segmentation.model import SegmentationModel
 from cellacdc.volume.model import VolumeModel
@@ -39,35 +45,50 @@ def test_load_channel_image_validates_shape(tmp_path: Path) -> None:
         load_channel_image(images, "mCherry", layout=layout)
 
 
-def test_segmentation_model_secondary_overlay(tmp_path: Path) -> None:
+def test_from_path_channels_and_overlay_composite(tmp_path: Path) -> None:
     images = _make_position(tmp_path, "Position_1")
+    loaded = ImageData.from_path_channels(images, ["phase", "gfp"])
+    assert len(loaded) == 2
+    assert loaded[0].channel_name == "phase"
+    assert loaded[1].channel_name == "gfp"
+    composite = overlay_stack_array(loaded[1:])
+    assert composite.shape == loaded[0].image.shape
+
+
+def test_segmentation_model_multi_channel_open(tmp_path: Path) -> None:
+    images = _make_position(tmp_path, "Position_1")
+    channel_images = ImageData.from_path_channels(images, ["phase", "gfp"])
+    from cellacdc.data import SegmentationResult
+
+    result = SegmentationResult.empty_like(channel_images[0])
     model = SegmentationModel()
-    spec = __import__("cellacdc.segmentation.experiment", fromlist=["build_load_spec"]).build_load_spec(
-        images, "phase"
-    )
-    model.load_position(spec)
-    assert model.secondary_sibling_channels() == ["gfp"]
-    model.load_secondary_channel("gfp")
-    assert model.secondary is not None
-    assert model.secondary.channel_name == "gfp"
+    model.open(channel_images, result)
+    assert model.overlay_channels == channel_images[1:]
     slice_ = model.current_secondary_slice()
     assert slice_ is not None and slice_.shape == (16, 16)
+    expected = overlay_slice_at(
+        channel_images[1:],
+        channel_images[0].layout,
+        0,
+        0,
+    )
+    assert np.array_equal(slice_, expected)
     model.set_primary_secondary_blend(25)
     assert model.primary_secondary_blend == 25
-    model.set_image_seg_blend(75)
-    assert model.image_seg_blend == 75
-    model.clear_secondary()
-    assert model.secondary is None
 
 
-def test_volume_model_clears_secondary_on_bind(tmp_path: Path) -> None:
-    from cellacdc.data import ImageData
-
+def test_volume_model_overlay_channels_on_bind(tmp_path: Path) -> None:
     images = _make_position(tmp_path, "Position_1")
-    imaged = ImageData.from_path(images, channel="phase")
+    loaded = ImageData.from_path_channels(images, ["phase", "gfp"])
     model = VolumeModel()
-    model.bind(imaged)
-    model.load_secondary_channel("gfp")
-    assert model.secondary is not None
-    model.bind(imaged)
-    assert model.secondary is None
+    model.bind(loaded)
+    assert model.overlay_channels == loaded[1:]
+    model.bind(loaded[:1])
+    assert model.overlay_channels == []
+
+
+def test_coalesce_images_rejects_mismatched_shapes() -> None:
+    a = ImageData.from_arrays(np.zeros((8, 8), dtype=np.uint8))
+    b = ImageData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
+    with pytest.raises(ValueError, match="does not match"):
+        coalesce_images([a, b])

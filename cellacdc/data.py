@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,6 +125,38 @@ class ImageData:
         layout = tools.layout_from_metadata(image.shape, size_t, size_z)
         return cls(image=image, layout=layout, title=title or "array")
 
+    @classmethod
+    def from_path_channels(
+        cls,
+        path: str | Path,
+        channels: Sequence[str],
+        *,
+        position: str | None = None,
+    ) -> list[ImageData]:
+        """Load one or more channels from a Cell-ACDC path."""
+        if not channels:
+            raise ValueError("At least one channel is required")
+        loaded = [cls.from_path(path, position=position, channel=ch) for ch in channels]
+        coalesce_images(loaded)
+        return loaded
+
+
+def coalesce_images(images: Sequence[ImageData]) -> tuple[ImageData, ...]:
+    """Validate a channel list and return it as a tuple."""
+    seq = tuple(images)
+    if not seq:
+        raise ValueError("At least one ImageData is required")
+    primary = seq[0]
+    for other in seq[1:]:
+        if other.image.shape != primary.image.shape:
+            raise ValueError(
+                f"Channel shape {other.image.shape} does not match "
+                f"primary shape {primary.image.shape}"
+            )
+        if other.layout != primary.layout:
+            raise ValueError("All channels must share the same stack layout")
+    return seq
+
 
 class SegmentationResult:
     """Label mask volume; editable in 2D segmentation, overlay-only in 3D."""
@@ -175,6 +208,3 @@ def default_segmentation(imaged: ImageData) -> SegmentationResult:
             pass
     return SegmentationResult.empty_like(imaged)
 
-
-Experiment = ImageData
-ExperimentData = ImageData

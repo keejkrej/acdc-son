@@ -27,7 +27,7 @@ from qtpy.QtWidgets import (
 
 from cellacdc.blend import layer_opacities
 from cellacdc.blend_controls import BlendControlBar
-from cellacdc.dialogs import pick_from_list
+from cellacdc.dialogs import pick_from_list, pick_many_from_list
 
 from cellacdc.display_levels import autoscale_levels
 
@@ -767,8 +767,6 @@ class SegmentationView(QMainWindow):
     t_index_changed = Signal(int)
     z_index_changed = Signal(int)
     label_visibility_changed = Signal()
-    add_secondary_requested = Signal()
-    remove_secondary_requested = Signal()
     primary_secondary_blend_changed = Signal(int)
     image_seg_blend_changed = Signal(int)
 
@@ -814,12 +812,6 @@ class SegmentationView(QMainWindow):
         self._save_as_act.setIcon(lucide_qicon(LucideIcon.SAVE_AS))
         self._save_as_act.setShortcut("Ctrl+Shift+S")
         self._save_as_act.triggered.connect(self.save_as_requested.emit)
-
-        self._add_secondary_act = QAction("Add secondary channel…", self)
-        self._add_secondary_act.triggered.connect(self.add_secondary_requested.emit)
-        self._remove_secondary_act = QAction("Remove secondary channel", self)
-        self._remove_secondary_act.setEnabled(False)
-        self._remove_secondary_act.triggered.connect(self.remove_secondary_requested.emit)
 
         self._undo_act = QAction("Undo", self)
         self._undo_act.setIcon(lucide_qicon(LucideIcon.UNDO))
@@ -872,9 +864,6 @@ class SegmentationView(QMainWindow):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._open_folder_act)
         file_menu.addAction(self._open_file_act)
-        file_menu.addSeparator()
-        file_menu.addAction(self._add_secondary_act)
-        file_menu.addAction(self._remove_secondary_act)
         file_menu.addSeparator()
         file_menu.addAction(self._save_act)
         file_menu.addAction(self._save_as_act)
@@ -985,15 +974,12 @@ class SegmentationView(QMainWindow):
             return names[0]
         return self._pick_from_list("Select position", names)
 
-    def ask_pick_channel(self, names: list[str]) -> str | None:
+    def ask_pick_channels(self, names: list[str]) -> list[str] | None:
         if not names:
             return None
         if len(names) == 1:
-            return names[0]
-        return pick_from_list(self, "Select channel", names)
-
-    def ask_pick_overlay_channel(self, names: list[str]) -> str | None:
-        return pick_from_list(self, "Select secondary channel", names)
+            return names
+        return pick_many_from_list(self, "Select channels", names)
 
     def _pick_from_list(self, title: str, names: list[str]) -> str | None:
         return pick_from_list(self, title, names)
@@ -1063,16 +1049,6 @@ class SegmentationView(QMainWindow):
             self._canvas.clear_overlay()
         self._canvas.set_mask_labels(mask_slice)
         self._canvas.set_hidden_labels(self.get_hidden_label_ids())
-
-    def set_secondary_ui(
-        self,
-        *,
-        can_add: bool,
-        active: bool,
-        channel_name: str = "",
-    ) -> None:
-        self._add_secondary_act.setEnabled(can_add)
-        self._remove_secondary_act.setEnabled(active)
 
     def set_blend_ui(
         self,

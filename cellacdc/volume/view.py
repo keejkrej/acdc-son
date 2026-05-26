@@ -18,7 +18,7 @@ from qtpy.QtWidgets import (
 )
 
 from cellacdc.blend_controls import BlendControlBar
-from cellacdc.dialogs import pick_from_list
+from cellacdc.dialogs import pick_from_list, pick_many_from_list
 from cellacdc.icons import LucideIcon, lucide_qicon
 from cellacdc.segmentation.view import LabelListPanel
 from cellacdc.volume.canvas import VolumeCanvas
@@ -122,8 +122,6 @@ class VolumeView(QMainWindow):
     t_index_changed = Signal(int)
     primary_secondary_blend_changed = Signal(int)
     image_seg_blend_changed = Signal(int)
-    add_secondary_requested = Signal()
-    remove_secondary_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -152,12 +150,6 @@ class VolumeView(QMainWindow):
         self._open_file_act.setIcon(lucide_qicon(LucideIcon.FILE_IMAGE))
         self._open_file_act.triggered.connect(self.open_image_file_requested.emit)
 
-        self._add_secondary_act = QAction("Add secondary channel…", self)
-        self._add_secondary_act.triggered.connect(self.add_secondary_requested.emit)
-        self._remove_secondary_act = QAction("Remove secondary channel", self)
-        self._remove_secondary_act.setEnabled(False)
-        self._remove_secondary_act.triggered.connect(self.remove_secondary_requested.emit)
-
         self._hand_act = QAction("Hand", self)
         self._hand_act.setIcon(lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
@@ -173,9 +165,6 @@ class VolumeView(QMainWindow):
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._open_folder_act)
         file_menu.addAction(self._open_file_act)
-        file_menu.addSeparator()
-        file_menu.addAction(self._add_secondary_act)
-        file_menu.addAction(self._remove_secondary_act)
         file_menu.addSeparator()
         quit_act = QAction("&Quit", self)
         quit_act.setShortcut("Ctrl+Q")
@@ -233,16 +222,6 @@ class VolumeView(QMainWindow):
     def set_status(self, text: str) -> None:
         self.statusBar().showMessage(text)
 
-    def set_secondary_ui(
-        self,
-        *,
-        can_add: bool,
-        active: bool,
-        channel_name: str = "",
-    ) -> None:
-        self._add_secondary_act.setEnabled(can_add)
-        self._remove_secondary_act.setEnabled(active)
-
     def set_blend_ui(
         self,
         *,
@@ -284,15 +263,12 @@ class VolumeView(QMainWindow):
             return names[0]
         return self._pick_from_list("Select position", names)
 
-    def ask_pick_channel(self, names: list[str]) -> str | None:
+    def ask_pick_channels(self, names: list[str]) -> list[str] | None:
         if not names:
             return None
         if len(names) == 1:
-            return names[0]
-        return pick_from_list(self, "Select channel", names)
-
-    def ask_pick_overlay_channel(self, names: list[str]) -> str | None:
-        return pick_from_list(self, "Select secondary channel", names)
+            return names
+        return pick_many_from_list(self, "Select channels", names)
 
     def _pick_from_list(self, title: str, names: list[str]) -> str | None:
         return pick_from_list(self, title, names)

@@ -5,7 +5,7 @@ Minimal **manual segmentation** GUI for microscopy, rewritten from [Cell_ACDC](h
 ## Features
 
 - Open Cell-ACDC experiment folders (`Position_n/Images/`) or individual image files
-- Position and channel pickers for multi-position experiments
+- Position and channel pickers for multi-position experiments; multi-select channel picker at load
 - Brush and eraser with configurable label ID and brush size
 - Frame and Z-slice navigation for stacks
 - Mask overlay toggle
@@ -45,22 +45,26 @@ Load data and open the 2D segmentation or 3D volume viewer without mandatory fil
 ```python
 import cellacdc
 
-image = cellacdc.ImageData.from_path("/path/to/experiment", channel="phase")
-segmentation = cellacdc.SegmentationResult.empty_like(image)
+phase = cellacdc.ImageData.from_path("/path/to/experiment", channel="phase")
+gfp = cellacdc.ImageData.from_path("/path/to/experiment", channel="gfp")
+# or load several channels at once:
+images = cellacdc.ImageData.from_path_channels("/path/to/experiment", ["phase", "gfp"])
+segmentation = cellacdc.SegmentationResult.empty_like(images[0])
 
-# 2D manual segmentation
-viewer, segmentation = cellacdc.imshow(image, segmentation)
+# 2D manual segmentation (first channel is primary; rest are overlays)
+viewer, segmentation = cellacdc.imshow(images, segmentation)
 cellacdc.run()
 
 # 3D volume overlay (read-only)
-viewer3d, segmentation = cellacdc.imshow3d(image, segmentation)
+viewer3d, segmentation = cellacdc.imshow3d(images, segmentation)
 cellacdc.run()
 ```
 
-- **`ImageData`** (`Experiment` / `ExperimentData` aliases) — read-only image volume + layout metadata
-- **`SegmentationResult`** — label mask (`uint32`); edited in 2D, overlaid in 3D
+- **`ImageData`** — read-only image volume + layout metadata; pass a channel list to viewers
+- **`ImageData.from_path_channels(...)`** — load multiple aligned channels from one path
+- **`SegmentationResult`** — label mask (`uint32`); edited in 2D, overlaid in 3D (aligned to the first channel)
 - **`SegmentationViewer`** / **`VolumeViewer`** — core viewer objects
-- **`imshow(image, segmentation, ...)` / `imshow3d(image, segmentation, ...)`** — convenience wrappers returning `(viewer, segmentation)`
+- **`imshow(images, segmentation, ...)` / `imshow3d(images, segmentation, ...)`** — `images` is a sequence of `ImageData`; returns `(viewer, segmentation)`
 - **`run()`** — Qt event loop (`uv run acdc-seg` or `uv run acdc-3d`)
 
 3D viewer: dual LUT bars (image grey, labels viridis) and an **Image ↔ Segmentation** blend slider; vispy default volume rendering only (no exposed render controls).
@@ -72,9 +76,8 @@ cellacdc/
   __init__.py              # Public API
   app.py                   # get_qapp, run
   data.py                  # ImageData + SegmentationResult
-  viewer.py                # Back-compat re-exports for 2D viewer
-  __main__.py              # acdc-seg CLI
   segmentation/
+    __main__.py            # acdc-seg CLI
     viewer.py              # SegmentationViewer, imshow
     model.py               # Editing state (binds to SegmentationResult)
     view.py                # Qt / pyqtgraph UI

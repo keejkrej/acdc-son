@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from qtpy.QtWidgets import QMessageBox
+
+from cellacdc.data import ImageData, SegmentationResult, default_segmentation
+from cellacdc.overlay import overlay_label
 
 from . import experiment
 from .model import SegmentationModel
@@ -37,8 +41,6 @@ class SegmentationPresenter:
         v.t_index_changed.connect(self._on_t_changed)
         v.z_index_changed.connect(self._on_z_changed)
         v.label_visibility_changed.connect(self._on_label_visibility_changed)
-        v.add_secondary_requested.connect(self._on_add_secondary)
-        v.remove_secondary_requested.connect(self._on_remove_secondary)
         v.primary_secondary_blend_changed.connect(self._on_primary_secondary_blend_changed)
         v.image_seg_blend_changed.connect(self._on_image_seg_blend_changed)
 
@@ -52,49 +54,17 @@ class SegmentationPresenter:
     def run(self) -> None:
         self._view.show()
 
-    def open(self, experiment, result) -> None:
-        """Load programmatic ``ImageData`` + ``SegmentationResult`` into the viewer."""
-        self._model.open(experiment, result)
+    def open(
+        self,
+        images: Sequence[ImageData],
+        result: SegmentationResult,
+    ) -> None:
+        """Load programmatic ``ImageData`` channel(s) and ``SegmentationResult``."""
+        self._model.open(images, result)
         self._view.reset_label_visibility()
         self._selected_label_ids = []
         self._sync_controls()
         self._refresh()
-
-    def _on_add_secondary(self) -> None:
-        if not self._model.has_data:
-            return
-        if self._model.images_path is None:
-            QMessageBox.information(
-                self._view,
-                "No channels",
-                "Secondary channel requires a Cell-ACDC Images folder.",
-            )
-            return
-        channels = self._model.secondary_sibling_channels()
-        if not channels:
-            QMessageBox.information(
-                self._view,
-                "No channels",
-                "No other channels are available as a secondary in this Images folder.",
-            )
-            return
-        channel = self._view.ask_pick_overlay_channel(channels)
-        if not channel:
-            return
-        try:
-            self._model.load_secondary_channel(channel)
-        except Exception as exc:
-            QMessageBox.critical(self._view, "Overlay failed", str(exc))
-            return
-        self._refresh_view()
-        self._sync_secondary_ui()
-        self._sync_blend_ui()
-
-    def _on_remove_secondary(self) -> None:
-        self._model.clear_secondary()
-        self._refresh_view()
-        self._sync_secondary_ui()
-        self._sync_blend_ui()
 
     def _on_primary_secondary_blend_changed(self, value: int) -> None:
         self._model.set_primary_secondary_blend(value)
@@ -104,23 +74,14 @@ class SegmentationPresenter:
         self._model.set_image_seg_blend(value)
         self._view.canvas.set_image_seg_blend(value)
 
-    def _sync_secondary_ui(self) -> None:
-        secondary = self._model.secondary
-        can_add = self._model.images_path is not None
-        self._view.set_secondary_ui(
-            can_add=can_add,
-            active=secondary is not None,
-            channel_name=secondary.channel_name if secondary is not None else "",
-        )
-
     def _sync_blend_ui(self) -> None:
-        secondary = self._model.secondary
+        has_overlay = bool(self._model.overlay_channels)
         self._view.set_blend_ui(
             visible=self._model.has_data,
             primary_secondary=int(round(self._model.primary_secondary_blend)),
             image_seg=int(round(self._model.image_seg_blend)),
-            show_primary_secondary=secondary is not None,
-            channel_name=secondary.channel_name if secondary is not None else "",
+            show_primary_secondary=has_overlay,
+            channel_name=overlay_label(self._model.overlay_channels) if has_overlay else "",
         )
 
     def _on_open_folder(self) -> None:
@@ -154,40 +115,34 @@ class SegmentationPresenter:
             images_path = images_paths[0]
 
         try:
-            _basename, channels = experiment.discover_basename_and_channels(images_path)
+            _basename, channel_names = experiment.discover_basename_and_channels(images_path)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
 
-        channel = self._view.ask_pick_channel(channels)
-        if not channel:
+        channels = self._view.ask_pick_channels(channel_names)
+        if not channels:
             return
 
         try:
-            spec = experiment.build_load_spec(images_path, channel)
-            self._model.load_position(spec)
+            images = ImageData.from_path_channels(images_path, channels)
+            result = default_segmentation(images[0])
+            self.open(images, result)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
-
-        self._view.reset_label_visibility()
-        self._selected_label_ids = []
-        self._sync_controls()
-        self._refresh()
 
     def _on_open_file(self) -> None:
         path = self._view.ask_open_image_path()
         if not path:
             return
         try:
-            self._model.load_image(Path(path))
+            imaged = ImageData.from_image_path(Path(path))
+            result = default_segmentation(imaged)
+            self.open([imaged], result)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
-        self._view.reset_label_visibility()
-        self._selected_label_ids = []
-        self._sync_controls()
-        self._refresh()
 
     def _on_save(self) -> None:
         if not self._model.has_data:
@@ -357,7 +312,6 @@ class SegmentationPresenter:
         self._view.canvas.set_mask_max_label_id(self._model.max_label_id())
         self._refresh_slice()
         self._sync_controls()
-        self._sync_secondary_ui()
         self._sync_blend_ui()
 
     def _refresh_mask_only(self) -> None:

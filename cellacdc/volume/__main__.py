@@ -9,7 +9,8 @@ from cellacdc.volume.viewer import VolumeViewer
 
 
 def main() -> None:
-    viewer = VolumeViewer(show=True)
+    viewer = VolumeViewer()
+    viewer.show()
     sys.exit(run())
 
 

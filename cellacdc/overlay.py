@@ -1,24 +1,14 @@
-"""Optional secondary channel overlay (shared by 2D and 3D viewers)."""
+"""Overlay channel helpers (shared by 2D and 3D viewers)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
+from cellacdc.data import ImageData
 from cellacdc.segmentation import experiment, io, tools
-
-
-@dataclass
-class SecondaryChannel:
-    """Second imaging channel aligned to the primary image volume."""
-
-    channel_name: str
-    image: np.ndarray
-
-    def slice_at(self, layout: tools.StackLayout, t_index: int, z_index: int) -> np.ndarray:
-        return tools.extract_slice(self.image, layout, t_index, z_index)
 
 
 def list_sibling_channels(
@@ -53,3 +43,35 @@ def load_channel_image(
             f'Channel "{channel_name}" shape {image.shape} does not match the primary image layout'
         )
     return image
+
+
+def overlay_label(channels: Sequence[ImageData]) -> str:
+    """Human-readable label for one or more overlay channels."""
+    names = [
+        ch.channel_name or ch.title
+        for ch in channels
+        if ch.channel_name or ch.title
+    ]
+    return " + ".join(names) if names else "overlay"
+
+
+def overlay_slice_at(
+    channels: Sequence[ImageData],
+    layout: tools.StackLayout,
+    t_index: int,
+    z_index: int,
+) -> np.ndarray | None:
+    """Return a max-intensity composite slice for overlay channels."""
+    if not channels:
+        return None
+    slices = [
+        tools.extract_slice(ch.image, layout, t_index, z_index) for ch in channels
+    ]
+    return np.maximum.reduce(np.stack(slices, axis=0))
+
+
+def overlay_stack_array(channels: Sequence[ImageData]) -> np.ndarray:
+    """Return a max-intensity composite volume for overlay channels."""
+    if not channels:
+        raise ValueError("No overlay channels")
+    return np.maximum.reduce(np.stack([ch.image for ch in channels], axis=0))

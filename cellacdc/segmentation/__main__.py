@@ -1,4 +1,4 @@
-"""Entry point for the manual segmentation GUI."""
+"""CLI entry for the 2D segmentation viewer."""
 
 from __future__ import annotations
 

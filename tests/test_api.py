@@ -7,8 +7,6 @@ from pathlib import Path
 import numpy as np
 
 from cellacdc.data import (
-    Experiment,
-    ExperimentData,
     ImageData,
     SegmentationResult,
     default_segmentation,
@@ -23,11 +21,6 @@ def test_imaged_from_arrays() -> None:
     assert imaged.image is image
     assert imaged.layout.size_y == 16
     assert imaged.title == "demo"
-
-
-def test_experiment_data_alias() -> None:
-    assert ExperimentData is ImageData
-    assert Experiment is ImageData
 
 
 def test_segmentation_result_empty_and_save(tmp_path: Path) -> None:
@@ -65,7 +58,7 @@ def test_model_open_edits_result_in_place() -> None:
     imaged = ImageData.from_arrays(image)
     result = SegmentationResult.empty_like(imaged)
     model = SegmentationModel()
-    model.open(imaged, result)
+    model.open([imaged], result)
     assert model.has_data
     assert model.mask is result.mask
     model.tool = "brush"
@@ -80,7 +73,7 @@ def test_model_save_delegates_to_result(tmp_path: Path) -> None:
     imaged = ImageData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
     result = SegmentationResult.empty_like(imaged)
     model = SegmentationModel()
-    model.open(imaged, result)
+    model.open([imaged], result)
     result.mask[0, 0] = 7
     dest = tmp_path / "out.npz"
     model.save_mask(dest)
@@ -119,7 +112,7 @@ def test_segmentation_viewer_open_binds_result() -> None:
     imaged = ImageData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
     result = SegmentationResult.empty_like(imaged)
     viewer = SegmentationViewer()
-    opened = viewer.open(imaged, result)
+    opened = viewer.open([imaged], result)
     assert opened is result
     assert viewer.model.mask is result.mask
     assert viewer.result is result
@@ -130,7 +123,7 @@ def test_imshow_returns_viewer_and_result() -> None:
 
     imaged = ImageData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
     result = SegmentationResult.empty_like(imaged)
-    viewer, opened = imshow(imaged, result, show=False)
+    viewer, opened = imshow([imaged], result, show=False)
     assert viewer.model.has_data
     assert opened is result
     assert opened.mask is result.mask
@@ -142,8 +135,20 @@ def test_volume_imshow_returns_viewer_and_result() -> None:
     image = np.zeros((4, 8, 8), dtype=np.uint16)
     imaged = ImageData.from_arrays(image)
     result = SegmentationResult.empty_like(imaged)
-    viewer, opened = imshow(imaged, result, show=False)
+    viewer, opened = imshow([imaged], result, show=False)
     assert viewer.model.has_data
+    assert opened is result
+
+
+def test_volume_imshow_accepts_channel_list() -> None:
+    from cellacdc.volume.viewer import imshow
+
+    primary = ImageData.from_arrays(np.zeros((4, 8, 8), dtype=np.uint16))
+    overlay = ImageData.from_arrays(np.ones((4, 8, 8), dtype=np.uint16) * 100, title="gfp")
+    result = SegmentationResult.empty_like(primary)
+    viewer, opened = imshow([primary, overlay], result, show=False)
+    assert viewer.model.has_data
+    assert viewer.model.overlay_channels == [overlay]
     assert opened is result
 
 
@@ -156,8 +161,8 @@ def test_volume_viewer_open_without_show() -> None:
     result = SegmentationResult.empty_like(imaged)
     result.mask[:, 3:5, 3:5] = 1
     viewer = VolumeViewer()
-    opened = viewer.open(imaged, result)
+    opened = viewer.open([imaged], result)
     assert opened is result
-    assert viewer.imaged is imaged
+    assert viewer.primary is imaged
     assert viewer.model.has_data
-    assert viewer.window.get_hidden_label_ids() == set()
+    assert viewer.view.get_hidden_label_ids() == set()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from cellacdc.data import Experiment, ExperimentData, ImageData
+from cellacdc.data import ImageData
 from cellacdc.segmentation import tools
 from cellacdc.volume.prepare import (
     label_volume_for_vispy,
@@ -15,11 +15,6 @@ from cellacdc.volume.prepare import (
     volume_zyx,
     voxel_display_scale,
 )
-
-
-def test_imaged_data_aliases() -> None:
-    assert Experiment is ImageData
-    assert ExperimentData is ImageData
 
 
 def test_volume_zyx_from_zstack() -> None:
