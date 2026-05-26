@@ -64,6 +64,8 @@ class ImageCanvas(QWidget):
         self._plot.setAspectLocked(True)
         self._plot.hideAxis("bottom")
         self._plot.hideAxis("left")
+        self._channel_weights: list[float] = [1.0]
+        self._image_seg_blend = 50.0
         self._channel_slots: list[_ChannelSlot] = []
         self._mask_item = pg.ImageItem()
         self._contour_item = pg.ImageItem()
@@ -75,7 +77,6 @@ class ImageCanvas(QWidget):
         self._seg_lut = SegmentationLutBar(self._mask_item)
         first_item = pg.ImageItem()
         first_lut = ImageLutBar(first_item, axis_label="Image")
-        first_lut.gradient.sigGradientChanged.connect(self._apply_layer_blend)
         first_item.setZValue(1)
         self._plot.addItem(first_item)
         self._channel_slots.append(
@@ -107,14 +108,27 @@ class ImageCanvas(QWidget):
         self._seg_lut.gradient.sigGradientChanged.connect(self._on_seg_lut_changed)
         self._source_labels: np.ndarray | None = None
         self._hidden_label_ids: set[int] = set()
-        self._channel_weights: list[float] = [1.0]
-        self._image_seg_blend = 50.0
         self._mask_max_label_id = 0
         self._seg_display_max = -1
+        self._image_origin = (0.0, 0.0)
 
     @property
     def _image_item(self) -> pg.ImageItem:
         return self._channel_slots[0].image_item
+
+    def _apply_image_origin(self, height: int, width: int) -> None:
+        """Place image/mask layers so their center sits at the plot origin."""
+        origin_x = -width / 2.0
+        origin_y = -height / 2.0
+        self._image_origin = (origin_x, origin_y)
+        for slot in self._channel_slots:
+            slot.image_item.setPos(origin_x, origin_y)
+        self._mask_item.setPos(origin_x, origin_y)
+        self._contour_item.setPos(origin_x, origin_y)
+
+    def _view_xy_from_pixel(self, y: int, x: int) -> tuple[float, float]:
+        origin_x, origin_y = self._image_origin
+        return x + origin_x, y + origin_y
 
     def set_channel_weights(self, weights: list[float]) -> None:
         self._channel_weights = [max(0.0, min(1.0, float(w))) for w in weights]
@@ -125,8 +139,15 @@ class ImageCanvas(QWidget):
         self._apply_layer_blend()
 
     def _apply_layer_blend(self) -> None:
+        slot_count = len(self._channel_slots)
+        weights = list(self._channel_weights)
+        if len(weights) < slot_count:
+            weights.extend([1.0] * (slot_count - len(weights)))
+        elif len(weights) > slot_count:
+            weights = weights[:slot_count]
+
         channel_opacities, seg_opacity = display_opacities(
-            self._channel_weights,
+            weights,
             self._image_seg_blend,
         )
         for index, slot in enumerate(self._channel_slots):
@@ -161,28 +182,53 @@ class ImageCanvas(QWidget):
             levels = display_levels[index] if index < len(display_levels) else None
             self._channel_slots[index].display_levels = levels
             self._set_channel_image(index, np.asarray(gray), levels)
+        if slices:
+            height, width = np.asarray(slices[0]).shape[:2]
+            self._apply_image_origin(height, width)
         self._apply_layer_blend()
+        self._fit_image_view()
+
+    def _fit_image_view(self) -> None:
+        img = self._image_item.image
+        if img is None:
+            return
+        height, width = img.shape[:2]
+        half_w = width / 2.0
+        half_h = height / 2.0
+        pad = 0.02
+        self._viewbox.setRange(
+            xRange=(-half_w * (1.0 + pad), half_w * (1.0 + pad)),
+            yRange=(-half_h * (1.0 + pad), half_h * (1.0 + pad)),
+            padding=0,
+        )
 
     def _sync_channel_count(self, count: int, labels: list[str]) -> None:
+        count_changed = False
         while len(self._channel_slots) > count:
+            count_changed = True
             slot = self._channel_slots.pop()
             self._plot.removeItem(slot.image_item)
             self._layout.removeItem(slot.lut)
             slot.lut.hide()
 
         while len(self._channel_slots) < count:
+            count_changed = True
             index = len(self._channel_slots)
             label = labels[index] if index < len(labels) else f"Channel {index + 1}"
             image_item = pg.ImageItem()
             lut = ImageLutBar(image_item, axis_label=label)
-            lut.gradient.sigGradientChanged.connect(self._apply_layer_blend)
             image_item.setZValue(index + 1)
             self._plot.addItem(image_item)
             self._channel_slots.append(
                 _ChannelSlot(image_item=image_item, lut=lut, display_levels=None)
             )
 
-        self._rebuild_lut_columns()
+        for index, slot in enumerate(self._channel_slots):
+            label = labels[index] if index < len(labels) else f"Channel {index + 1}"
+            slot.lut.set_axis_label(label)
+
+        if count_changed:
+            self._rebuild_lut_columns()
 
     def _rebuild_lut_columns(self) -> None:
         for slot in list(self._channel_slots):
@@ -217,19 +263,17 @@ class ImageCanvas(QWidget):
         )
         if display_levels is not None:
             lo, hi = display_levels
-            if shape_changed:
-                slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
-                slot.lut.setLevels(lo, hi)
-                slot.lut.imageChanged(autoLevel=False, autoRange=True)
-            else:
-                slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
+            slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
+            slot.lut.setLevels(lo, hi)
+            slot.lut.imageChanged(autoLevel=False, autoRange=False)
         elif shape_changed:
             lo, hi = autoscale_levels(gray)
             slot.image_item.setImage(gray, autoLevels=False, levels=(lo, hi))
             slot.lut.setLevels(lo, hi)
-            slot.lut.imageChanged(autoLevel=False, autoRange=True)
+            slot.lut.imageChanged(autoLevel=False, autoRange=False)
         else:
             slot.image_item.setImage(gray, autoLevels=False)
+            slot.lut.imageChanged(autoLevel=False, autoRange=False)
 
     def set_mask_labels(self, labels: np.ndarray) -> None:
         self._source_labels = labels
@@ -301,6 +345,7 @@ class ImageCanvas(QWidget):
         self._channel_weights = [1.0]
         self._mask_max_label_id = 0
         self._seg_display_max = -1
+        self._image_origin = (0.0, 0.0)
         self._clear_marquee()
         self._clear_selection_items()
 
@@ -317,7 +362,9 @@ class ImageCanvas(QWidget):
             ymin, xmin, ymax, xmax = box
             xs = [xmin, xmax, xmax, xmin, xmin]
             ys = [ymin, ymin, ymax, ymax, ymin]
-            item = pg.PlotDataItem(xs, ys, pen=pen)
+            view_xs = [self._view_xy_from_pixel(0, int(x))[0] for x in xs]
+            view_ys = [self._view_xy_from_pixel(int(y), 0)[1] for y in ys]
+            item = pg.PlotDataItem(view_xs, view_ys, pen=pen)
             item.setZValue(12)
             self._plot.addItem(item)
             self._selection_items.append(item)
@@ -337,12 +384,14 @@ class ImageCanvas(QWidget):
         ymin, ymax = sorted((y0, y1))
         xs = [xmin, xmax, xmax, xmin, xmin]
         ys = [ymin, ymin, ymax, ymax, ymin]
+        view_xs = [self._view_xy_from_pixel(0, int(x))[0] for x in xs]
+        view_ys = [self._view_xy_from_pixel(int(y), 0)[1] for y in ys]
         pen = pg.mkPen((255, 220, 0), width=1, style=Qt.DashLine)
         if self._marquee_item is None:
             self._marquee_item = pg.PlotDataItem(pen=pen)
             self._marquee_item.setZValue(12)
             self._plot.addItem(self._marquee_item)
-        self._marquee_item.setData(xs, ys)
+        self._marquee_item.setData(view_xs, view_ys)
 
     def set_tool(self, tool: str) -> None:
         self._tool = tool
@@ -421,8 +470,9 @@ class ImageCanvas(QWidget):
         if img is None:
             return None
         mouse_point = self._viewbox.mapSceneToView(pos)
-        x = int(round(mouse_point.x()))
-        y = int(round(mouse_point.y()))
+        origin_x, origin_y = self._image_origin
+        x = int(round(mouse_point.x() - origin_x))
+        y = int(round(mouse_point.y() - origin_y))
         h, w = img.shape[:2]
         if 0 <= x < w and 0 <= y < h:
             return y, x
@@ -449,10 +499,7 @@ class ImageCanvas(QWidget):
 
         if self._should_pan(button):
             self._finish_stroke_if_armed()
-            if self._tool == "hand" and button == Qt.RightButton:
-                self._pan_by_drag(ev, axis)
-            else:
-                self._orig_drag(ev, axis)
+            self._pan_by_drag(ev, axis)
             ev.accept()
             return
 
@@ -717,29 +764,31 @@ class SegmentationView(QMainWindow):
         self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
         self._hand_act.setShortcut("H")
-        self._hand_act.setToolTip("Hand — pan the canvas (H)")
-        self._hand_act.triggered.connect(lambda: self._on_tool_action("hand"))
+        self._hand_act.setToolTip(
+            "Hand — drag to pan; middle-drag or Space+drag to pan; scroll to zoom (H)"
+        )
+        self._hand_act.triggered.connect(lambda checked: self._on_tool_action("hand", checked))
 
         self._move_act = QAction("Move", self)
         self._move_act.setIcon(themed_lucide_qicon(LucideIcon.MOVE))
         self._move_act.setCheckable(True)
         self._move_act.setShortcut("V")
         self._move_act.setToolTip("Move — click or drag to select labels (V)")
-        self._move_act.triggered.connect(lambda: self._on_tool_action("move"))
+        self._move_act.triggered.connect(lambda checked: self._on_tool_action("move", checked))
 
         self._brush_act = QAction("Brush", self)
         self._brush_act.setIcon(themed_lucide_qicon(LucideIcon.BRUSH))
         self._brush_act.setCheckable(True)
         self._brush_act.setShortcut("B")
         self._brush_act.setToolTip("Brush (B)")
-        self._brush_act.triggered.connect(lambda: self._on_tool_action("brush"))
+        self._brush_act.triggered.connect(lambda checked: self._on_tool_action("brush", checked))
 
         self._eraser_act = QAction("Eraser", self)
         self._eraser_act.setIcon(themed_lucide_qicon(LucideIcon.ERASER))
         self._eraser_act.setCheckable(True)
         self._eraser_act.setShortcut("E")
         self._eraser_act.setToolTip("Eraser (E)")
-        self._eraser_act.triggered.connect(lambda: self._on_tool_action("eraser"))
+        self._eraser_act.triggered.connect(lambda checked: self._on_tool_action("eraser", checked))
 
         self._hand_act.setChecked(True)
 
@@ -827,7 +876,16 @@ class SegmentationView(QMainWindow):
         self._size_spin.blockSignals(False)
         self.brush_size_changed.emit(size)
 
-    def _on_tool_action(self, tool: str) -> None:
+    def _on_tool_action(self, tool: str, checked: bool = True) -> None:
+        action_by_tool = {
+            "hand": self._hand_act,
+            "move": self._move_act,
+            "brush": self._brush_act,
+            "eraser": self._eraser_act,
+        }
+        if not checked:
+            action_by_tool[tool].setChecked(True)
+            return
         self._canvas.set_tool(tool)
         self._update_options_bar(tool)
         self.tool_changed.emit(tool)

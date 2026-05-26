@@ -23,6 +23,17 @@ class ImagesMetadata:
     physical_size_x: float = 1.0
 
 
+def _basename_from_metadata_csv(path: Path) -> str | None:
+    """Infer experiment basename from ``{basename}metadata.csv`` filename."""
+    name = path.name
+    suffix = "metadata.csv"
+    if name.endswith(suffix):
+        prefix = name[: -len(suffix)]
+        if prefix:
+            return prefix
+    return None
+
+
 def find_metadata_csv(folder: Path) -> Path | None:
     """Return ``*metadata.csv`` in ``folder``, if present."""
     folder = Path(folder)
@@ -51,8 +62,9 @@ def read_images_metadata(folder: Path) -> ImagesMetadata:
         for key, value in raw.items()
         if key.startswith("channel_") and key.endswith("_name") and value
     )
+    basename = raw.get("basename") or _basename_from_metadata_csv(metadata_path) or None
     return ImagesMetadata(
-        basename=raw.get("basename") or None,
+        basename=basename,
         channels=channels,
         size_t=_parse_int(raw.get("SizeT")),
         size_z=_parse_int(raw.get("SizeZ")),

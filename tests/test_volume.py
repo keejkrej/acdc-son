@@ -8,14 +8,77 @@ import pytest
 from acdc.utils.blend import display_opacities
 from acdc.core.data import AcdcData
 from acdc.core import stack
+from acdc.volume.volume_model import VolumeModel
 from acdc.volume.prepare import (
     label_volume_for_vispy,
     mask_volume_zyx,
     normalize_image_stack_volume,
     normalize_image_volume,
     volume_zyx,
+    volume_scene_transform,
+    volume_world_half_extents,
     voxel_display_scale,
 )
+
+
+def test_volume_turntable_camera_defaults_to_top_down() -> None:
+    pytest.importorskip("vispy")
+    from acdc.volume.camera import (
+        DEFAULT_AZIMUTH,
+        DEFAULT_ELEVATION,
+        DEFAULT_FOV,
+        DEFAULT_ROLL,
+        VolumeTurntableCamera,
+    )
+    from vispy.scene.cameras import TurntableCamera
+
+    assert issubclass(VolumeTurntableCamera, TurntableCamera)
+    camera = VolumeTurntableCamera()
+    assert camera.elevation == DEFAULT_ELEVATION
+    assert camera.azimuth == DEFAULT_AZIMUTH
+    assert camera.roll == DEFAULT_ROLL
+    assert camera.fov == DEFAULT_FOV
+    assert hasattr(camera, "_pan_center")
+
+
+def test_volume_turntable_camera_hand_pan_bindings() -> None:
+    pytest.importorskip("vispy")
+    from vispy.util import keys
+
+    from acdc.volume.camera import VolumeTurntableCamera
+
+    camera = VolumeTurntableCamera()
+    assert camera._should_pan([1], ()) is True
+    assert camera._should_pan([2], ()) is True
+    assert camera._should_pan([3], ()) is True
+    assert camera._should_pan([1], (keys.SHIFT,)) is False
+    assert camera._should_orbit([1], (keys.SHIFT,)) is True
+    camera.space_pan = True
+    assert camera._should_pan([1], ()) is True
+    camera.space_pan = False
+    assert camera._should_pan([1, 2], ()) is False
+
+
+def test_volume_turntable_camera_supports_middle_button_pan() -> None:
+    pytest.importorskip("vispy")
+    from acdc.volume.camera import VolumeTurntableCamera
+
+    assert hasattr(VolumeTurntableCamera(), "_pan_center")
+
+
+def test_volume_model_bind_loads_label_ids_from_result() -> None:
+    image = np.zeros((4, 8, 8), dtype=np.uint16)
+    image[:, 2:6, 2:6] = 100
+    imaged = AcdcData.from_arrays(image)
+    from acdc.core.data import AcdcResult
+
+    mask = np.zeros((4, 8, 8), dtype=np.uint32)
+    mask[1, 3, 3] = 1
+    mask[2, 5, 5] = 2
+    result = AcdcResult(mask)
+    model = VolumeModel()
+    model.bind([imaged], result)
+    assert model.all_label_ids() == [1, 2]
 
 
 def test_volume_zyx_from_zstack() -> None:
@@ -78,6 +141,34 @@ def test_label_volume_for_vispy_small_ids_use_tight_lut() -> None:
 def test_voxel_display_scale_matches_cell_acdc_ratio() -> None:
     assert voxel_display_scale(2.0, 1.0, 1.0) == (1.0, 1.0, 2.0)
     assert voxel_display_scale(1.0, 0.5, 0.5) == (1.0, 1.0, 2.0)
+
+
+def test_volume_scene_transform_centers_at_origin() -> None:
+    shape = (10, 20, 40)
+    scale, translate = volume_scene_transform(shape, 2.0, 1.0, 1.0)
+    assert scale == (1.0, 1.0, 2.0)
+    z, y, x = shape
+    sx, sy, sz = scale
+    assert translate == (-(x - 1) * sx / 2, -(y - 1) * sy / 2, -(z - 1) * sz / 2)
+    assert volume_world_half_extents(shape, 2.0, 1.0, 1.0) == (20.0, 10.0, 10.0)
+
+
+def test_volume_canvas_starts_with_one_channel_lut() -> None:
+    pytest.importorskip("vispy")
+    import os
+
+    os.environ.setdefault("QT_API", "pyside6")
+    import vispy
+
+    vispy.use(app="pyside6")
+    from qtpy.QtWidgets import QApplication
+
+    from acdc.volume.canvas import VolumeCanvas
+
+    app = QApplication.instance() or QApplication([])
+    canvas = VolumeCanvas()
+    assert len(canvas._image_channels) == 1
+    assert canvas._image_channels[0].lut.axis.labelText == "Image"
 
 
 def test_volume_canvas_dual_channels_use_napari_style_gl_blend() -> None:

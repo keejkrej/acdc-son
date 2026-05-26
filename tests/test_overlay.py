@@ -47,8 +47,58 @@ def test_volume_model_stores_all_channels_on_bind(tmp_path: Path) -> None:
     assert model.channels == list(loaded[:1])
 
 
+def test_segment_canvas_centers_image_at_origin() -> None:
+    pytest.importorskip("pyqtgraph")
+    import os
+
+    os.environ.setdefault("QT_API", "pyside6")
+    from qtpy.QtWidgets import QApplication
+
+    from acdc.segment.segment_view import ImageCanvas
+
+    app = QApplication.instance() or QApplication([])
+    canvas = ImageCanvas()
+    gray = np.zeros((16, 32), dtype=np.uint16)
+    canvas.set_channel_slices([gray], display_levels=[(0.0, 1.0)])
+    assert canvas._image_origin == (-16.0, -8.0)
+    pos = canvas._channel_slots[0].image_item.pos()
+    assert pos.x() == pytest.approx(-16.0)
+    assert pos.y() == pytest.approx(-8.0)
+    x_range, y_range = canvas._plot.getViewBox().viewRange()
+    assert x_range[0] < 0 < x_range[1]
+    assert y_range[0] < 0 < y_range[1]
+
+
 def test_coalesce_images_rejects_mismatched_shapes() -> None:
     a = AcdcData.from_arrays(np.zeros((8, 8), dtype=np.uint8))
     b = AcdcData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
     with pytest.raises(ValueError, match="does not match"):
         coalesce_images([a, b])
+
+
+def test_segment_canvas_renders_loaded_channels() -> None:
+    pytest.importorskip("pyqtgraph")
+    import os
+
+    os.environ.setdefault("QT_API", "pyside6")
+    from qtpy.QtWidgets import QApplication
+
+    from acdc.segment.segment_view import ImageCanvas
+
+    app = QApplication.instance() or QApplication([])
+    canvas = ImageCanvas()
+    primary = np.full((16, 16), 500, dtype=np.uint16)
+    secondary = np.full((16, 16), 900, dtype=np.uint16)
+    canvas.set_channel_slices(
+        [primary, secondary],
+        display_levels=[(0.0, 1000.0), (0.0, 1000.0)],
+        labels=["phase", "gfp"],
+    )
+
+    assert len(canvas._channel_slots) == 2
+    for index, slot in enumerate(canvas._channel_slots):
+        assert slot.image_item.isVisible()
+        assert slot.image_item.opacity() > 0.0
+        assert slot.image_item.image is not None
+        assert float(slot.image_item.image.max()) == pytest.approx(500.0 if index == 0 else 900.0)
+        assert slot.lut.getLevels()[1] == pytest.approx(1000.0)

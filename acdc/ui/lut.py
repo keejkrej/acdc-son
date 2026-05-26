@@ -40,4 +40,7 @@ class BaseLutBar(pg.HistogramLUTItem):
         self.setMinimumWidth(95)
         self.setMaximumWidth(115)
         if axis_label:
-            self.axis.setLabel(axis_label, **self._LABEL_STYLE)
+            self.set_axis_label(axis_label)
+
+    def set_axis_label(self, axis_label: str) -> None:
+        self.axis.setLabel(axis_label, **self._LABEL_STYLE)

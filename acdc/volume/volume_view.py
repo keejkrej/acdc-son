@@ -158,7 +158,10 @@ class VolumeView(QMainWindow):
         self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
         self._hand_act.setShortcut("H")
-        self._hand_act.setToolTip("Hand — navigate the 3D view (H)")
+        self._hand_act.setToolTip(
+            "Hand — drag to pan; middle-drag or Space+drag to pan; scroll to zoom; "
+            "Shift+drag to orbit (H)"
+        )
         self._hand_act.triggered.connect(self._on_hand_tool)
 
         self._tool_group = QActionGroup(self)
@@ -198,7 +201,10 @@ class VolumeView(QMainWindow):
         )
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
-    def _on_hand_tool(self) -> None:
+    def _on_hand_tool(self, checked: bool = True) -> None:
+        if not checked:
+            self._hand_act.setChecked(True)
+            return
         self._canvas.focus_canvas()
 
     def reset_label_visibility(self) -> None:

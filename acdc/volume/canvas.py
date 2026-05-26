@@ -6,14 +6,20 @@ from dataclasses import dataclass
 
 import numpy as np
 import pyqtgraph as pg
-from qtpy.QtCore import Qt, QTimer
+from qtpy.QtCore import QEvent, Qt, QTimer
 from qtpy.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from acdc.utils.blend import display_opacities
+from acdc.volume.camera import (
+    DEFAULT_AZIMUTH,
+    DEFAULT_ELEVATION,
+    DEFAULT_ROLL,
+    VolumeTurntableCamera,
+)
 from acdc.volume.cmaps import label_lut_to_vispy, pg_colormap_to_vispy
 from acdc.volume.gl_blend import volume_gl_state
 from acdc.volume.lut import VolumeImageLutBar, VolumeLabelLutBar
-from acdc.volume.prepare import voxel_display_scale
+from acdc.volume.prepare import volume_scene_transform, volume_world_half_extents
 
 
 class _LutColumn(QWidget):
@@ -54,6 +60,7 @@ class VolumeCanvas(QWidget):
         self._voxel_dz = 1.0
         self._voxel_dy = 1.0
         self._voxel_dx = 1.0
+        self._volume_shape: tuple[int, int, int] | None = None
         self._pending_fit = False
         self._hidden_label_ids: set[int] = set()
 
@@ -81,6 +88,10 @@ class VolumeCanvas(QWidget):
         layout.addWidget(self._right_lut)
 
         self._ensure_vispy()
+        self._canvas_host.installEventFilter(self)
+        self._sync_image_channel_count(1, ["Image"])
+        self._apply_channel_style(0)
+        self._apply_layer_blend()
 
     def set_channel_weights(self, weights: list[float]) -> None:
         self._channel_weights = [max(0.0, min(1.0, float(w))) for w in weights]
@@ -114,6 +125,7 @@ class VolumeCanvas(QWidget):
         if len(volumes) != len(clims):
             raise ValueError("volumes and clims must have the same length")
 
+        self._volume_shape = tuple(int(dim) for dim in volumes[0].shape)
         labels = channel_labels or []
         self._sync_image_channel_count(len(volumes), labels)
 
@@ -128,7 +140,6 @@ class VolumeCanvas(QWidget):
             self._label_node.set_data(np.ascontiguousarray(label_volume, dtype=np.float32))
             self._apply_label_style()
             self._label_node.visible = True
-            self._schedule_fit_camera()
         else:
             self._label_node.visible = False
 
@@ -137,6 +148,7 @@ class VolumeCanvas(QWidget):
 
         self._apply_voxel_scale()
         self._apply_layer_blend()
+        self._schedule_fit_camera()
         self._canvas.update()
 
     def set_hidden_labels(self, hidden_ids: set[int]) -> None:
@@ -184,6 +196,8 @@ class VolumeCanvas(QWidget):
             self._image_channels.append(_ImageChannel(node=node, lut=lut, column=column))
 
         for index, channel in enumerate(self._image_channels):
+            label = labels[index] if index < len(labels) else f"Channel {index + 1}"
+            channel.lut.set_axis_label(label)
             channel.node.order = index
             channel.column.setVisible(True)
 
@@ -212,6 +226,7 @@ class VolumeCanvas(QWidget):
         native = self._canvas.native
         native.setFocusPolicy(Qt.StrongFocus)
         native.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        native.installEventFilter(self)
 
         host_layout = QVBoxLayout(self._canvas_host)
         host_layout.setContentsMargins(0, 0, 0, 0)
@@ -219,11 +234,7 @@ class VolumeCanvas(QWidget):
         host_layout.addWidget(native)
 
         self._view = self._canvas.central_widget.add_view()
-        self._view.camera = scene.cameras.TurntableCamera(
-            fov=45,
-            elevation=30.0,
-            azimuth=-60.0,
-        )
+        self._view.camera = VolumeTurntableCamera()
         self._scene_root = self._view.scene
         self._label_node = visuals.Volume(
             np.zeros((2, 2, 2), dtype=np.float32),
@@ -242,9 +253,25 @@ class VolumeCanvas(QWidget):
         if self._view is None or self._view.camera is None:
             return
         self._pending_fit = False
-        self._view.camera.set_range()
-        self._view.camera.elevation = 30.0
-        self._view.camera.azimuth = -60.0
+        camera = self._view.camera
+        camera.center = (0.0, 0.0, 0.0)
+        if self._volume_shape is not None:
+            hx, hy, hz = volume_world_half_extents(
+                self._volume_shape,
+                self._voxel_dz,
+                self._voxel_dy,
+                self._voxel_dx,
+            )
+            camera.set_range(
+                x=(-hx, hx),
+                y=(-hy, hy),
+                z=(-hz, hz),
+            )
+        else:
+            camera.set_range()
+        camera.elevation = DEFAULT_ELEVATION
+        camera.azimuth = DEFAULT_AZIMUTH
+        camera.roll = DEFAULT_ROLL
         if self._canvas is not None:
             self._canvas.update()
 
@@ -253,8 +280,18 @@ class VolumeCanvas(QWidget):
             return
         from vispy.visuals.transforms import STTransform
 
-        scale = voxel_display_scale(self._voxel_dz, self._voxel_dy, self._voxel_dx)
-        transform = STTransform(scale=scale)
+        if self._volume_shape is None:
+            transform = STTransform(
+                scale=volume_scene_transform((1, 1, 1), self._voxel_dz, self._voxel_dy, self._voxel_dx)[0]
+            )
+        else:
+            scale, translate = volume_scene_transform(
+                self._volume_shape,
+                self._voxel_dz,
+                self._voxel_dy,
+                self._voxel_dx,
+            )
+            transform = STTransform(scale=scale, translate=translate)
         for channel in self._image_channels:
             channel.node.transform = transform
         if self._label_node is not None:
@@ -347,3 +384,13 @@ class VolumeCanvas(QWidget):
         self._ensure_vispy()
         if self._canvas is not None:
             self._canvas.native.setFocus()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: ARG002
+        camera = self._view.camera if self._view is not None else None
+        if camera is not None and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+                camera.space_pan = True
+        elif camera is not None and event.type() == QEvent.KeyRelease:
+            if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+                camera.space_pan = False
+        return False

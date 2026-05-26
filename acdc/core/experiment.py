@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 from pathlib import Path
 
 from acdc.core import io, metadata
 
 POSITION_PATTERN = re.compile(r"^Position_(\d+)$", re.IGNORECASE)
-CHANNEL_FILE_PATTERN = re.compile(
-    r"^(?P<basename>.+_)(?P<channel>[a-zA-Z0-9_-]+)(?:_aligned\.npz|\.tiff?)$",
-    re.IGNORECASE,
-)
 SKIP_FILENAMES = metadata.SKIP_FILENAMES
 
 
@@ -72,29 +69,33 @@ def position_name_from_images_path(images_path: Path) -> str | None:
     return None
 
 
-def _parse_channel_file(filename: str) -> tuple[str, str] | None:
-    match = CHANNEL_FILE_PATTERN.match(filename)
-    if match is None:
-        return None
-    return match.group("basename"), match.group("channel")
+def _is_channel_file(filename: str) -> bool:
+    lower = filename.lower()
+    return filename.endswith("_aligned.npz") or lower.endswith((".tif", ".tiff"))
 
 
 def _basename_from_files(filenames: list[str]) -> str:
-    parsed = [_parse_channel_file(name) for name in filenames]
-    pairs = [pair for pair in parsed if pair is not None]
-    if not pairs:
+    channel_files = [name for name in filenames if _is_channel_file(name)]
+    if not channel_files:
         raise ValueError(f"No channel files found in {filenames}")
-    basenames = {basename for basename, _channel in pairs}
-    if len(basenames) != 1:
-        raise ValueError(f"Inconsistent basenames in {filenames}")
-    return pairs[0][0]
+    basename = channel_files[0]
+    for name in channel_files:
+        matcher = difflib.SequenceMatcher(None, name, basename)
+        i, _j, k = matcher.find_longest_match(0, len(name), 0, len(basename))
+        basename = name[i : i + k]
+    return basename
 
 
 def channel_name_from_file(filename: str, basename: str) -> str | None:
-    parsed = _parse_channel_file(filename)
-    if parsed is None or parsed[0] != basename:
+    if filename.endswith("_aligned.npz"):
+        suffix = "_aligned.npz"
+    elif filename.lower().endswith(".tif") or filename.lower().endswith(".tiff"):
+        suffix = Path(filename).suffix
+    else:
         return None
-    return parsed[1]
+    if not filename.startswith(basename) or not filename.endswith(suffix):
+        return None
+    return filename[len(basename) : -len(suffix)]
 
 
 def _discover_basename_and_channels(
@@ -114,9 +115,9 @@ def _discover_basename_and_channels(
     basename = meta.basename or _basename_from_files(filenames)
     found: set[str] = set()
     for name in filenames:
-        parsed = _parse_channel_file(name)
-        if parsed is not None and parsed[0] == basename:
-            found.add(parsed[1])
+        ch = channel_name_from_file(name, basename)
+        if ch:
+            found.add(ch)
     if not found:
         raise ValueError(f"No channels found in {images_path}")
     return basename, sorted(found)
@@ -159,7 +160,11 @@ def mask_path_for_image(image_path: Path) -> Path:
     meta = metadata.read_images_metadata(folder)
     if meta.basename:
         return segm_file_path(folder, meta.basename)
-    return io.segm_path_for_image(image_path)
+    try:
+        basename, _channels = discover_basename_and_channels(folder)
+        return segm_file_path(folder, basename)
+    except ValueError:
+        return io.segm_path_for_image(image_path)
 
 
 def resolve_channel(

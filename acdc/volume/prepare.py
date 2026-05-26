@@ -75,6 +75,33 @@ def voxel_display_scale(dz: float, dy: float, dx: float) -> tuple[float, float, 
     return (1.0, dy_eff / dx_eff, dz_eff / dx_eff)
 
 
+def volume_scene_transform(
+    shape_zyx: tuple[int, ...],
+    dz: float,
+    dy: float,
+    dx: float,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Return ``(scale, translate)`` to center a ``(Z, Y, X)`` volume at the origin."""
+    z, y, x = (int(shape_zyx[0]), int(shape_zyx[1]), int(shape_zyx[2]))
+    scale = voxel_display_scale(dz, dy, dx)
+    sx, sy, sz = scale
+    # Vispy volumes use local coords [-0.5, n-0.5]; center is at (n-1)/2 per axis.
+    translate = (-(x - 1) * sx / 2.0, -(y - 1) * sy / 2.0, -(z - 1) * sz / 2.0)
+    return scale, translate
+
+
+def volume_world_half_extents(
+    shape_zyx: tuple[int, ...],
+    dz: float,
+    dy: float,
+    dx: float,
+) -> tuple[float, float, float]:
+    """Half-extents in world space after ``volume_scene_transform`` (x, y, z)."""
+    z, y, x = (int(shape_zyx[0]), int(shape_zyx[1]), int(shape_zyx[2]))
+    sx, sy, sz = voxel_display_scale(dz, dy, dx)
+    return (x * sx / 2.0, y * sy / 2.0, z * sz / 2.0)
+
+
 def label_volume_for_vispy(volume: np.ndarray) -> tuple[np.ndarray, int]:
     """Return ``float32`` label IDs and a LUT sized to the actual label range."""
     lab = np.ascontiguousarray(volume, dtype=np.float32)

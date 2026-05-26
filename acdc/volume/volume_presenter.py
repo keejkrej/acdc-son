@@ -7,7 +7,8 @@ from pathlib import Path
 
 from qtpy.QtWidgets import QMessageBox
 
-from acdc.core.data import AcdcData, AcdcResult
+from acdc.core import experiment
+from acdc.core.data import AcdcData, AcdcResult, load_segmentation
 from acdc.ui.open_experiment import pick_experiment_images
 from acdc.utils.channels import channel_display_name
 from acdc.volume.prepare import (
@@ -79,9 +80,11 @@ class VolumePresenter:
         picked = pick_experiment_images(self._view, self._view)
         if picked is None:
             return
-        _images_path, images = picked
+        images_path, images = picked
         try:
-            self.open(images)
+            mask_path = experiment.mask_path(images_path)
+            result = load_segmentation(mask_path, like=images[0])
+            self.open(images, result)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
 
@@ -90,8 +93,11 @@ class VolumePresenter:
         if not path:
             return
         try:
-            imaged = AcdcData.from_path(Path(path))
-            self.open([imaged])
+            image_path = Path(path)
+            imaged = AcdcData.from_path(image_path)
+            mask_path = experiment.mask_path_for_image(image_path)
+            result = load_segmentation(mask_path, like=imaged)
+            self.open([imaged], result)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
 

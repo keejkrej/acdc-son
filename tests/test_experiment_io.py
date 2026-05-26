@@ -86,6 +86,35 @@ def test_discover_basename_and_channels_from_metadata(tmp_path: Path) -> None:
     assert channels == ["gfp", "phase"]
 
 
+def test_discover_basename_and_channels_with_underscore_channel_names(tmp_path: Path) -> None:
+    images = tmp_path / "Position_1" / "Images"
+    images.mkdir(parents=True)
+    basename = "ASY15-1_15nM-01_s1_"
+    data = np.zeros((16, 16), dtype=np.uint16)
+    tifffile.imwrite(images / f"{basename}EGFP.tif", data)
+    tifffile.imwrite(images / f"{basename}T_PMT.tif", data)
+    tifffile.imwrite(images / f"{basename}mKate.tif", data)
+    _write_metadata(images, basename, channels=("EGFP", "T_PMT", "mKate"))
+
+    discovered_basename, channels = experiment.discover_basename_and_channels(images)
+    assert discovered_basename == basename
+    assert channels == ["EGFP", "T_PMT", "mKate"]
+
+
+def test_basename_from_files_with_underscore_channel_names(tmp_path: Path) -> None:
+    images = tmp_path / "Position_1" / "Images"
+    images.mkdir(parents=True)
+    basename = "ASY15-1_15nM-01_s1_"
+    data = np.zeros((16, 16), dtype=np.uint16)
+    tifffile.imwrite(images / f"{basename}EGFP.tif", data)
+    tifffile.imwrite(images / f"{basename}T_PMT.tif", data)
+    tifffile.imwrite(images / f"{basename}mKate.tif", data)
+
+    discovered_basename, channels = experiment.discover_basename_and_channels(images)
+    assert discovered_basename == basename
+    assert channels == ["EGFP", "T_PMT", "mKate"]
+
+
 def test_channel_file_prefers_aligned_npz(tmp_path: Path) -> None:
     images = _make_position(tmp_path, "Position_1", aligned=True)
     path = experiment.channel_file_path(images, "test_s01_", "phase")
@@ -133,6 +162,18 @@ def test_load_metadata_csv(tmp_path: Path) -> None:
     meta = io.load_metadata_csv(csv_path)
     assert meta["basename"] == "foo_"
     assert meta["SizeT"] == "5"
+
+
+def test_read_images_metadata_infers_basename_from_csv_filename(tmp_path: Path) -> None:
+    images = _make_position(tmp_path, "Position_1")
+    metadata_path = images / "test_s01_metadata.csv"
+    lines = metadata_path.read_text(encoding="utf-8").splitlines()
+    lines = [line for line in lines if not line.startswith("basename,")]
+    metadata_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    meta = metadata.read_images_metadata(images)
+    assert meta.basename == "test_s01_"
+    assert experiment.mask_path_for_image(images / "test_s01_phase.tif") == images / "test_s01_segm.npz"
 
 
 def test_mask_path_for_image_uses_metadata(tmp_path: Path) -> None:
