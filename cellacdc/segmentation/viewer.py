@@ -60,12 +60,12 @@ class SegmentationViewer:
         """Bind ``images`` channel(s) and a live ``segmentation`` mask to this viewer."""
         image_list = coalesce_images(images)
         primary = image_list[0]
-        mask_result = (
+        segmentation = (
             segmentation if segmentation is not None else default_segmentation(primary)
         )
-        self._presenter.open(list(image_list), mask_result)
-        self._result = mask_result
-        return mask_result
+        self._presenter.open(list(image_list), segmentation)
+        self._result = segmentation
+        return segmentation
 
     def show(self) -> None:
         """Show the viewer window."""
@@ -91,8 +91,8 @@ def imshow(
     show: bool = True,
 ) -> tuple[SegmentationViewer, SegmentationResult]:
     """Open ``images`` in the 2D segmentation viewer and return ``(viewer, segmentation)``."""
-    target = viewer if viewer is not None else SegmentationViewer()
-    mask_result = target.open(images, segmentation)
+    viewer = viewer or SegmentationViewer()
+    segmentation = viewer.open(images, segmentation)
     if show:
-        target.show()
-    return target, mask_result
+        viewer.show()
+    return viewer, segmentation

@@ -91,8 +91,8 @@ def imshow(
     t_index: int = 0,
 ) -> tuple[VolumeViewer, SegmentationResult]:
     """Open ``images`` in the 3D volume viewer and return ``(viewer, segmentation)``."""
-    target = viewer if viewer is not None else VolumeViewer()
-    mask_result = target.open(images, segmentation, t_index=t_index)
+    viewer = viewer or VolumeViewer()
+    segmentation = viewer.open(images, segmentation, t_index=t_index)
     if show:
-        target.show()
-    return target, mask_result
+        viewer.show()
+    return viewer, segmentation
