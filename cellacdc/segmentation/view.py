@@ -5,16 +5,19 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 from qtpy.QtCore import Qt, Signal
+from qtpy.QtGui import QActionGroup
 from qtpy.QtWidgets import (
     QAction,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QDockWidget,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QListWidget,
+    QListWidgetItem,
     QSlider,
     QSpinBox,
     QToolBar,
@@ -116,6 +119,233 @@ class ImageCanvas(QWidget):
         ev.accept()
 
 
+class TransportBar(QWidget):
+    """Bottom viewer transport for frame and Z-slice scrubbing."""
+
+    t_index_changed = Signal(int)
+    z_index_changed = Signal(int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(2)
+
+        self._frame_row = QWidget()
+        frame_layout = QHBoxLayout(self._frame_row)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.addWidget(QLabel("Frame:"))
+        self._t_slider = QSlider(Qt.Horizontal)
+        self._t_slider.valueChanged.connect(self.t_index_changed.emit)
+        frame_layout.addWidget(self._t_slider, stretch=1)
+        self._t_label = QLabel("0/0")
+        self._t_label.setMinimumWidth(48)
+        frame_layout.addWidget(self._t_label)
+        layout.addWidget(self._frame_row)
+
+        self._z_row = QWidget()
+        z_layout = QHBoxLayout(self._z_row)
+        z_layout.setContentsMargins(0, 0, 0, 0)
+        z_layout.addWidget(QLabel("Z-slice:"))
+        self._z_slider = QSlider(Qt.Horizontal)
+        self._z_slider.valueChanged.connect(self.z_index_changed.emit)
+        z_layout.addWidget(self._z_slider, stretch=1)
+        self._z_label = QLabel("0/0")
+        self._z_label.setMinimumWidth(48)
+        z_layout.addWidget(self._z_label)
+        layout.addWidget(self._z_row)
+
+    def set_navigation(self, t: int, t_max: int, z: int, z_max: int) -> None:
+        show_frame = t_max > 0
+        show_z = z_max > 0
+        self.setVisible(show_frame or show_z)
+        self._frame_row.setVisible(show_frame)
+        self._z_row.setVisible(show_z)
+
+        self._t_slider.blockSignals(True)
+        self._z_slider.blockSignals(True)
+        self._t_slider.setEnabled(show_frame)
+        self._z_slider.setEnabled(show_z)
+        self._t_slider.setMinimum(0)
+        self._t_slider.setMaximum(max(0, t_max))
+        self._z_slider.setMinimum(0)
+        self._z_slider.setMaximum(max(0, z_max))
+        self._t_slider.setValue(t)
+        self._z_slider.setValue(z)
+        self._t_slider.blockSignals(False)
+        self._z_slider.blockSignals(False)
+        self._t_label.setText(f"{t}/{t_max}")
+        self._z_label.setText(f"{z}/{z_max}")
+
+    def update_indices(self, t: int, t_max: int, z: int, z_max: int) -> None:
+        """Update frame labels without touching slider values (during scrub)."""
+        self._t_label.setText(f"{t}/{t_max}")
+        self._z_label.setText(f"{z}/{z_max}")
+
+
+class ViewerFrame(QWidget):
+    """Canvas with bottom transport controls."""
+
+    t_index_changed = Signal(int)
+    z_index_changed = Signal(int)
+
+    def __init__(self, canvas: ImageCanvas, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.canvas = canvas
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(canvas, stretch=1)
+        self._transport = TransportBar()
+        self._transport.t_index_changed.connect(self.t_index_changed.emit)
+        self._transport.z_index_changed.connect(self.z_index_changed.emit)
+        layout.addWidget(self._transport)
+
+    def set_navigation(self, t: int, t_max: int, z: int, z_max: int) -> None:
+        self._transport.set_navigation(t, t_max, z, z_max)
+
+    def update_navigation_indices(self, t: int, t_max: int, z: int, z_max: int) -> None:
+        self._transport.update_indices(t, t_max, z, z_max)
+
+
+class LabelHeaderCheckBox(QCheckBox):
+    """Explorer-style header: partial/unchecked -> check all, checked -> clear all."""
+
+    def nextCheckState(self) -> None:
+        if self.checkState() == Qt.Checked:
+            self.setCheckState(Qt.Unchecked)
+        else:
+            self.setCheckState(Qt.Checked)
+
+
+class LabelListPanel(QWidget):
+    """Explorer-style label list with global and per-label visibility toggles."""
+
+    label_id_changed = Signal(int)
+    label_visibility_changed = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._updating = False
+        self._hidden_labels: set[int] = set()
+        self._all_label_ids: list[int] = []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 6, 8, 6)
+        self._header_cb = LabelHeaderCheckBox("Labels")
+        self._header_cb.setTristate(True)
+        self._header_cb.setChecked(True)
+        self._header_cb.checkStateChanged.connect(self._on_header_state_changed)
+        header_layout.addWidget(self._header_cb)
+        header_layout.addStretch()
+        layout.addWidget(header)
+
+        self._list = QListWidget()
+        self._list.itemChanged.connect(self._on_item_changed)
+        self._list.currentItemChanged.connect(self._on_current_item_changed)
+        layout.addWidget(self._list)
+
+    def reset_visibility(self) -> None:
+        self._hidden_labels.clear()
+
+    def get_hidden_label_ids(self) -> set[int]:
+        return set(self._hidden_labels)
+
+    def set_label_list(self, label_ids: list[int], *, active_id: int) -> None:
+        self._all_label_ids = list(label_ids)
+
+        self._updating = True
+        self._list.clear()
+        for label_id in label_ids:
+            item = QListWidgetItem(str(label_id))
+            item.setData(Qt.UserRole, label_id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            checked = label_id not in self._hidden_labels
+            item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+            self._list.addItem(item)
+        self._updating = False
+
+        self._sync_header_checkbox()
+        self._select_label(active_id)
+
+    def set_active_label(self, label_id: int) -> None:
+        self._select_label(label_id)
+
+    def _select_label(self, label_id: int) -> None:
+        self._list.blockSignals(True)
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            if item is not None and item.data(Qt.UserRole) == label_id:
+                self._list.setCurrentRow(row)
+                break
+        self._list.blockSignals(False)
+
+    def _on_header_state_changed(self, state: int) -> None:
+        if self._updating or state == Qt.PartiallyChecked:
+            return
+        self._updating = True
+        if state == Qt.Checked:
+            self._hidden_labels.clear()
+            check = Qt.Checked
+        else:
+            self._hidden_labels = set(self._all_label_ids)
+            check = Qt.Unchecked
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            if item is not None:
+                item.setCheckState(check)
+        self._updating = False
+        self.label_visibility_changed.emit()
+
+    def _on_item_changed(self, item: QListWidgetItem) -> None:
+        if self._updating:
+            return
+        label_id = item.data(Qt.UserRole)
+        if label_id is None:
+            return
+        label_id = int(label_id)
+        if item.checkState() == Qt.Checked:
+            self._hidden_labels.discard(label_id)
+        else:
+            self._hidden_labels.add(label_id)
+        self._sync_header_checkbox()
+        self.label_visibility_changed.emit()
+
+    def _on_current_item_changed(
+        self,
+        current: QListWidgetItem | None,
+        _previous: QListWidgetItem | None,
+    ) -> None:
+        if current is None:
+            return
+        label_id = current.data(Qt.UserRole)
+        if label_id is not None:
+            self.label_id_changed.emit(int(label_id))
+
+    def _sync_header_checkbox(self) -> None:
+        total = len(self._all_label_ids)
+        if total == 0:
+            self._updating = True
+            self._header_cb.setCheckState(Qt.Unchecked)
+            self._updating = False
+            return
+
+        visible = sum(1 for label_id in self._all_label_ids if label_id not in self._hidden_labels)
+        self._updating = True
+        if visible == 0:
+            self._header_cb.setCheckState(Qt.Unchecked)
+        elif visible == total:
+            self._header_cb.setCheckState(Qt.Checked)
+        else:
+            self._header_cb.setCheckState(Qt.PartiallyChecked)
+        self._updating = False
+
+
 class SegmentationView(QMainWindow):
     """Main window UI for manual segmentation."""
 
@@ -130,42 +360,75 @@ class SegmentationView(QMainWindow):
     brush_size_changed = Signal(int)
     t_index_changed = Signal(int)
     z_index_changed = Signal(int)
-    show_mask_toggled = Signal(bool)
+    label_visibility_changed = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Cell-ACDC — Manual Segmentation")
         self._canvas = ImageCanvas()
-        self.setCentralWidget(self._build_central())
+        self._viewer = ViewerFrame(self._canvas)
+        self._viewer.t_index_changed.connect(self.t_index_changed.emit)
+        self._viewer.z_index_changed.connect(self.z_index_changed.emit)
+        self.setCentralWidget(self._viewer)
+        self._build_actions()
         self._build_menu()
-        self._build_toolbar()
-        self._build_nav_bar()
+        self._build_options_bar()
+        self._build_tool_rail()
+        self._build_labels_dock()
+        self.statusBar().showMessage("Open a Cell-ACDC folder to begin.")
+        self._update_options_bar("brush")
 
-    def _build_central(self) -> QWidget:
-        root = QWidget()
-        layout = QVBoxLayout(root)
-        layout.addWidget(self._canvas)
-        self._status = QLabel("Open a Cell-ACDC folder to begin.")
-        layout.addWidget(self._status)
-        return root
+    def _build_actions(self) -> None:
+        self._open_folder_act = QAction("Open folder…", self)
+        self._open_folder_act.setShortcut("Ctrl+O")
+        self._open_folder_act.setToolTip("Open Cell-ACDC experiment folder")
+        self._open_folder_act.triggered.connect(self.open_folder_requested.emit)
+
+        self._open_file_act = QAction("Open image file…", self)
+        self._open_file_act.setToolTip("Open a single image file")
+        self._open_file_act.triggered.connect(self.open_image_file_requested.emit)
+
+        self._save_act = QAction("Save mask", self)
+        self._save_act.setShortcut("Ctrl+S")
+        self._save_act.triggered.connect(self.save_requested.emit)
+
+        self._save_as_act = QAction("Save mask as…", self)
+        self._save_as_act.setShortcut("Ctrl+Shift+S")
+        self._save_as_act.triggered.connect(self.save_as_requested.emit)
+
+        self._undo_act = QAction("Undo", self)
+        self._undo_act.setShortcut("Ctrl+Z")
+        self._undo_act.triggered.connect(self.undo_requested.emit)
+
+        self._redo_act = QAction("Redo", self)
+        self._redo_act.setShortcut("Ctrl+Y")
+        self._redo_act.triggered.connect(self.redo_requested.emit)
+
+        self._brush_act = QAction("Brush", self)
+        self._brush_act.setCheckable(True)
+        self._brush_act.setChecked(True)
+        self._brush_act.setShortcut("B")
+        self._brush_act.setToolTip("Brush (B)")
+        self._brush_act.triggered.connect(lambda: self._on_tool_action("brush"))
+
+        self._eraser_act = QAction("Eraser", self)
+        self._eraser_act.setCheckable(True)
+        self._eraser_act.setShortcut("X")
+        self._eraser_act.setToolTip("Eraser (X)")
+        self._eraser_act.triggered.connect(lambda: self._on_tool_action("eraser"))
+
+        self._tool_group = QActionGroup(self)
+        self._tool_group.setExclusive(True)
+        self._tool_group.addAction(self._brush_act)
+        self._tool_group.addAction(self._eraser_act)
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
-        open_folder_act = QAction("Open &folder…", self)
-        open_folder_act.setShortcut("Ctrl+O")
-        open_folder_act.triggered.connect(self.open_folder_requested.emit)
-        file_menu.addAction(open_folder_act)
-        open_file_act = QAction("Open image &file…", self)
-        open_file_act.triggered.connect(self.open_image_file_requested.emit)
-        file_menu.addAction(open_file_act)
-        save_act = QAction("&Save mask", self)
-        save_act.setShortcut("Ctrl+S")
-        save_act.triggered.connect(self.save_requested.emit)
-        file_menu.addAction(save_act)
-        save_as_act = QAction("Save mask &as…", self)
-        save_as_act.setShortcut("Ctrl+Shift+S")
-        save_as_act.triggered.connect(self.save_as_requested.emit)
-        file_menu.addAction(save_as_act)
+        file_menu.addAction(self._open_folder_act)
+        file_menu.addAction(self._open_file_act)
+        file_menu.addSeparator()
+        file_menu.addAction(self._save_act)
+        file_menu.addAction(self._save_as_act)
         file_menu.addSeparator()
         quit_act = QAction("&Quit", self)
         quit_act.setShortcut("Ctrl+Q")
@@ -173,71 +436,64 @@ class SegmentationView(QMainWindow):
         file_menu.addAction(quit_act)
 
         edit_menu = self.menuBar().addMenu("&Edit")
-        undo_act = QAction("&Undo", self)
-        undo_act.setShortcut("Ctrl+Z")
-        undo_act.triggered.connect(self.undo_requested.emit)
-        edit_menu.addAction(undo_act)
-        redo_act = QAction("&Redo", self)
-        redo_act.setShortcut("Ctrl+Y")
-        redo_act.triggered.connect(self.redo_requested.emit)
-        edit_menu.addAction(redo_act)
+        edit_menu.addAction(self._undo_act)
+        edit_menu.addAction(self._redo_act)
 
-    def _build_toolbar(self) -> None:
-        bar = QToolBar("Tools", self)
+    def _build_options_bar(self) -> None:
+        """Photoshop-style context options for the active tool."""
+        bar = QToolBar("Options", self)
+        bar.setMovable(False)
         self.addToolBar(bar)
-        self._brush_btn = bar.addAction("Brush")
-        self._brush_btn.setCheckable(True)
-        self._brush_btn.setChecked(True)
-        self._brush_btn.setShortcut("B")
-        self._brush_btn.triggered.connect(lambda: self._select_tool("brush"))
 
-        self._eraser_btn = bar.addAction("Eraser")
-        self._eraser_btn.setCheckable(True)
-        self._eraser_btn.setShortcut("X")
-        self._eraser_btn.triggered.connect(lambda: self._select_tool("eraser"))
-
-        bar.addSeparator()
-        bar.addWidget(QLabel(" Label ID: "))
+        self._options_label = QLabel(" Label ID:")
+        bar.addWidget(self._options_label)
         self._label_spin = QSpinBox()
         self._label_spin.setRange(1, 999_999)
         self._label_spin.setValue(1)
         self._label_spin.valueChanged.connect(self.label_id_changed.emit)
         bar.addWidget(self._label_spin)
 
-        bar.addWidget(QLabel(" Brush size: "))
+        bar.addSeparator()
+        bar.addWidget(QLabel(" Size:"))
         self._size_spin = QSpinBox()
         self._size_spin.setRange(1, 128)
         self._size_spin.setValue(4)
         self._size_spin.valueChanged.connect(self.brush_size_changed.emit)
         bar.addWidget(self._size_spin)
 
-        bar.addSeparator()
-        self._show_mask = QCheckBox("Show mask")
-        self._show_mask.setChecked(True)
-        self._show_mask.toggled.connect(self.show_mask_toggled.emit)
-        bar.addWidget(self._show_mask)
+    def _build_tool_rail(self) -> None:
+        bar = QToolBar("Tools", self)
+        bar.setOrientation(Qt.Vertical)
+        bar.setMovable(False)
+        self.addToolBar(Qt.LeftToolBarArea, bar)
+        bar.addAction(self._brush_act)
+        bar.addAction(self._eraser_act)
 
-    def _build_nav_bar(self) -> None:
-        bar = QToolBar("Navigate", self)
-        self.addToolBar(bar)
-        bar.addWidget(QLabel(" Frame: "))
-        self._t_slider = QSlider(Qt.Horizontal)
-        self._t_slider.valueChanged.connect(self.t_index_changed.emit)
-        bar.addWidget(self._t_slider)
-        self._t_label = QLabel("0/0")
-        bar.addWidget(self._t_label)
+    def _build_labels_dock(self) -> None:
+        self._label_panel = LabelListPanel()
+        self._label_panel.label_id_changed.connect(self.label_id_changed.emit)
+        self._label_panel.label_visibility_changed.connect(
+            self.label_visibility_changed.emit
+        )
 
-        bar.addWidget(QLabel("  Z-slice: "))
-        self._z_slider = QSlider(Qt.Horizontal)
-        self._z_slider.valueChanged.connect(self.z_index_changed.emit)
-        bar.addWidget(self._z_slider)
-        self._z_label = QLabel("0/0")
-        bar.addWidget(self._z_label)
+        dock = QDockWidget("Labels", self)
+        dock.setWidget(self._label_panel)
+        dock.setFeatures(
+            QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable
+        )
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
-    def _select_tool(self, tool: str) -> None:
-        self._brush_btn.setChecked(tool == "brush")
-        self._eraser_btn.setChecked(tool == "eraser")
+    def reset_label_visibility(self) -> None:
+        self._label_panel.reset_visibility()
+
+    def _on_tool_action(self, tool: str) -> None:
+        self._update_options_bar(tool)
         self.tool_changed.emit(tool)
+
+    def _update_options_bar(self, tool: str) -> None:
+        is_brush = tool == "brush"
+        self._options_label.setVisible(is_brush)
+        self._label_spin.setVisible(is_brush)
 
     def ask_open_folder_path(self) -> str | None:
         path = QFileDialog.getExistingDirectory(
@@ -301,28 +557,25 @@ class SegmentationView(QMainWindow):
         return path or None
 
     def set_navigation(self, t: int, t_max: int, z: int, z_max: int) -> None:
-        self._t_slider.blockSignals(True)
-        self._z_slider.blockSignals(True)
-        self._t_slider.setEnabled(t_max > 0)
-        self._z_slider.setEnabled(z_max > 0)
-        self._t_slider.setMinimum(0)
-        self._t_slider.setMaximum(max(0, t_max))
-        self._z_slider.setMinimum(0)
-        self._z_slider.setMaximum(max(0, z_max))
-        self._t_slider.setValue(t)
-        self._z_slider.setValue(z)
-        self._t_slider.blockSignals(False)
-        self._z_slider.blockSignals(False)
-        self._t_label.setText(f"{t}/{t_max}")
-        self._z_label.setText(f"{z}/{z_max}")
+        self._viewer.set_navigation(t, t_max, z, z_max)
+
+    def update_navigation_indices(self, t: int, t_max: int, z: int, z_max: int) -> None:
+        self._viewer.update_navigation_indices(t, t_max, z, z_max)
 
     def set_status(self, text: str) -> None:
-        self._status.setText(text)
+        self.statusBar().showMessage(text)
 
     def set_label_id(self, label_id: int) -> None:
         self._label_spin.blockSignals(True)
         self._label_spin.setValue(label_id)
         self._label_spin.blockSignals(False)
+        self._label_panel.set_active_label(label_id)
+
+    def set_label_list(self, label_ids: list[int], *, active_id: int) -> None:
+        self._label_panel.set_label_list(label_ids, active_id=active_id)
+
+    def get_hidden_label_ids(self) -> set[int]:
+        return self._label_panel.get_hidden_label_ids()
 
     def set_brush_size(self, size: int) -> None:
         self._size_spin.blockSignals(True)
@@ -333,20 +586,12 @@ class SegmentationView(QMainWindow):
         self,
         image_slice: np.ndarray,
         mask_slice: np.ndarray,
-        *,
-        show_mask: bool,
     ) -> None:
         self._canvas.set_image(image_slice)
-        if show_mask:
-            self._canvas.set_mask_labels(mask_slice)
-        else:
-            self._canvas.set_mask_labels(np.zeros_like(mask_slice))
+        self._canvas.set_mask_labels(mask_slice)
 
-    def refresh_mask(self, mask_slice: np.ndarray, *, show_mask: bool) -> None:
-        if show_mask:
-            self._canvas.set_mask_labels(mask_slice)
-        else:
-            self._canvas.set_mask_labels(np.zeros_like(mask_slice))
+    def refresh_mask(self, mask_slice: np.ndarray) -> None:
+        self._canvas.set_mask_labels(mask_slice)
 
     @property
     def canvas(self) -> ImageCanvas:

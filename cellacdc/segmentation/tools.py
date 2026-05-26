@@ -170,6 +170,28 @@ def fill_label_holes(mask_slice: np.ndarray, label: int) -> bool:
     return True
 
 
+def filter_visible_labels(
+    mask_slice: np.ndarray,
+    visible_ids: set[int],
+) -> np.ndarray:
+    """Return a mask slice showing only ``visible_ids`` (background elsewhere)."""
+    if not visible_ids:
+        return np.zeros_like(mask_slice)
+    visible = np.fromiter(visible_ids, dtype=mask_slice.dtype)
+    return np.where(np.isin(mask_slice, visible), mask_slice, np.uint32(0))
+
+
+def apply_label_visibility(
+    mask_slice: np.ndarray,
+    hidden_ids: set[int],
+) -> np.ndarray:
+    """Return ``mask_slice`` with ``hidden_ids`` zeroed out."""
+    if not hidden_ids:
+        return mask_slice
+    hidden = np.fromiter(hidden_ids, dtype=mask_slice.dtype)
+    return np.where(np.isin(mask_slice, hidden), np.uint32(0), mask_slice)
+
+
 def _label_rgb(label: int, c: float = 0.85) -> tuple[float, float, float]:
     hue = (int(label) * 47) % 360
     hp = hue / 60.0

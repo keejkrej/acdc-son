@@ -131,6 +131,20 @@ class SegmentationModel:
         assert self.mask is not None and self.layout is not None
         return tools.extract_slice(self.mask, self.layout, self.t_index, self.z_index)
 
+    def current_label_ids(self) -> list[int]:
+        """Return sorted unique label IDs on the current slice (excluding background)."""
+        if not self.has_data:
+            return []
+        ids = np.unique(self.current_mask_slice())
+        return sorted(int(label) for label in ids if label > 0)
+
+    def all_label_ids(self) -> list[int]:
+        """Return sorted unique label IDs in the full mask (excluding background)."""
+        if not self.has_data or self.mask is None:
+            return []
+        ids = np.unique(self.mask)
+        return sorted(int(label) for label in ids if label > 0)
+
     def set_mask_slice(self, slice_2d: np.ndarray) -> None:
         assert self.mask is not None and self.layout is not None
         self.mask = tools.write_slice(

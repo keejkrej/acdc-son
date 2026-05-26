@@ -53,6 +53,27 @@ def test_fill_label_holes() -> None:
     assert mask[10, 10] == 1
 
 
+def test_filter_visible_labels() -> None:
+    mask = np.zeros((8, 8), dtype=np.uint32)
+    mask[0:4, 0:4] = 1
+    mask[4:8, 4:8] = 2
+    filtered = tools.filter_visible_labels(mask, {1})
+    assert filtered[2, 2] == 1
+    assert filtered[6, 6] == 0
+    assert tools.filter_visible_labels(mask, set()).max() == 0
+
+
+def test_apply_label_visibility() -> None:
+    mask = np.zeros((8, 8), dtype=np.uint32)
+    mask[0:4, 0:4] = 1
+    mask[4:8, 4:8] = 2
+    unchanged = tools.apply_label_visibility(mask, set())
+    assert unchanged is mask
+    hidden = tools.apply_label_visibility(mask, {2})
+    assert hidden[2, 2] == 1
+    assert hidden[6, 6] == 0
+
+
 def test_end_stroke_fills_holes(tmp_path: Path) -> None:
     image = np.ones((20, 20), dtype=np.uint8)
     image_path = tmp_path / "a.npy"
@@ -67,6 +88,33 @@ def test_end_stroke_fills_holes(tmp_path: Path) -> None:
     model.paint(3, 3)
     model.end_stroke()
     assert model.current_mask_slice()[10, 10] == 1
+
+
+def test_all_label_ids() -> None:
+    mask = np.zeros((4, 16, 16), dtype=np.uint32)
+    mask[0, 2:6, 2:6] = 1
+    mask[3, 8:10, 8:10] = 2
+    layout = tools.infer_layout(mask.shape)
+    model = SegmentationModel()
+    model.image = np.zeros(mask.shape, dtype=np.uint8)
+    model.mask = mask
+    model.layout = layout
+    assert model.all_label_ids() == [1, 2]
+    assert model.current_label_ids() == [1]
+    model.z_index = 3
+    assert model.current_label_ids() == [2]
+
+
+def test_current_label_ids() -> None:
+    mask = np.zeros((16, 16), dtype=np.uint32)
+    mask[2:6, 2:6] = 1
+    mask[8:10, 8:10] = 3
+    layout = tools.infer_layout(mask.shape)
+    model = SegmentationModel()
+    model.image = np.zeros((16, 16), dtype=np.uint8)
+    model.mask = mask
+    model.layout = layout
+    assert model.current_label_ids() == [1, 3]
 
 
 def test_undo(tmp_path: Path) -> None:

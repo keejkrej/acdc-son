@@ -8,6 +8,7 @@ from qtpy.QtWidgets import QApplication, QMessageBox
 
 from . import experiment
 from .model import SegmentationModel
+from .tools import apply_label_visibility
 from .view import SegmentationView
 
 
@@ -17,7 +18,6 @@ class SegmentationPresenter:
     def __init__(self, model: SegmentationModel, view: SegmentationView) -> None:
         self._model = model
         self._view = view
-        self._show_mask = True
         self._connect()
 
     def _connect(self) -> None:
@@ -33,7 +33,7 @@ class SegmentationPresenter:
         v.brush_size_changed.connect(self._on_brush_size_changed)
         v.t_index_changed.connect(self._on_t_changed)
         v.z_index_changed.connect(self._on_z_changed)
-        v.show_mask_toggled.connect(self._on_show_mask_toggled)
+        v.label_visibility_changed.connect(self._on_label_visibility_changed)
 
         c = v.canvas
         c.paint_at.connect(self._on_paint_at)
@@ -90,6 +90,7 @@ class SegmentationPresenter:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
 
+        self._view.reset_label_visibility()
         self._sync_controls()
         self._refresh()
 
@@ -102,6 +103,7 @@ class SegmentationPresenter:
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
+        self._view.reset_label_visibility()
         self._sync_controls()
         self._refresh()
 
@@ -149,24 +151,27 @@ class SegmentationPresenter:
 
     def _on_t_changed(self, t: int) -> None:
         self._model.t_index = t
-        self._refresh()
+        self._refresh_view()
 
     def _on_z_changed(self, z: int) -> None:
         self._model.z_index = z
-        self._refresh()
+        self._refresh_view()
 
-    def _on_show_mask_toggled(self, checked: bool) -> None:
-        self._show_mask = checked
-        self._refresh()
-
-    def _on_paint_at(self, y: int, x: int) -> None:
-        self._model.paint(y, x)
+    def _on_label_visibility_changed(self) -> None:
         self._refresh_mask_only()
 
     def _on_stroke_finished(self) -> None:
         self._model.end_stroke()
         self._refresh_mask_only()
         self._sync_controls()
+
+    def _on_paint_at(self, y: int, x: int) -> None:
+        self._model.paint(y, x)
+        self._refresh_mask_only()
+        self._view.set_label_list(
+            self._model.all_label_ids(),
+            active_id=self._model.label_id,
+        )
 
     def _sync_controls(self) -> None:
         layout = self._model.layout
@@ -177,25 +182,46 @@ class SegmentationPresenter:
         self._view.set_navigation(self._model.t_index, t_max, self._model.z_index, z_max)
         self._view.set_label_id(self._model.label_id)
         self._view.set_brush_size(self._model.brush_size)
+        self._view.set_label_list(
+            self._model.all_label_ids(),
+            active_id=self._model.label_id,
+        )
         label = self._model.status_label()
         dirty = " *" if self._model.dirty else ""
         self._view.set_status(f"{label}{dirty}")
 
+    def _display_mask(self):
+        mask = self._model.current_mask_slice()
+        return apply_label_visibility(mask, self._view.get_hidden_label_ids())
+
+    def _refresh_view(self) -> None:
+        if not self._model.has_data:
+            return
+        layout = self._model.layout
+        assert layout is not None
+        t_max = max(0, layout.size_t - 1)
+        z_max = max(0, layout.size_z - 1)
+        self._view.refresh_display(
+            self._model.current_image_slice(),
+            self._display_mask(),
+        )
+        self._view.update_navigation_indices(
+            self._model.t_index,
+            t_max,
+            self._model.z_index,
+            z_max,
+        )
+
     def _refresh(self) -> None:
         if not self._model.has_data:
             return
-        img = self._model.current_image_slice()
-        mask = self._model.current_mask_slice()
-        self._view.refresh_display(img, mask, show_mask=self._show_mask)
+        self._refresh_view()
         self._sync_controls()
 
     def _refresh_mask_only(self) -> None:
         if not self._model.has_data:
             return
-        self._view.refresh_mask(
-            self._model.current_mask_slice(),
-            show_mask=self._show_mask,
-        )
+        self._view.refresh_mask(self._display_mask())
 
 
 def create_app() -> tuple[QApplication, SegmentationPresenter]:
