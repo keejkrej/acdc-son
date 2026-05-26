@@ -10,6 +10,7 @@ from cellacdc.segmentation import tools
 from cellacdc.volume.prepare import (
     label_volume_for_vispy,
     mask_volume_zyx,
+    normalize_image_stack_volume,
     normalize_image_volume,
     volume_zyx,
     voxel_display_scale,
@@ -46,9 +47,20 @@ def test_mask_volume_zyx_matches_image_layout() -> None:
 def test_normalize_image_volume_scales_to_unit_interval() -> None:
     vol = np.array([[[0, 50], [100, 200]]], dtype=np.uint16)
     scaled, clim = normalize_image_volume(vol)
-    assert clim == (0.0, 1.0)
-    assert scaled.min() == 0.0
-    assert scaled.max() == 1.0
+    assert scaled.min() >= 0.0
+    assert scaled.max() <= 1.0
+    assert clim[1] > clim[0]
+
+
+def test_normalize_image_stack_volume_uses_full_stack_levels() -> None:
+    stack = np.zeros((8, 8, 8), dtype=np.uint16)
+    stack[2, 1:7, 1:7] = 100
+    stack[4, 4, 4] = 60000
+    layout = tools.infer_layout(stack.shape)
+    vol = stack[2]
+    scaled, clim = normalize_image_stack_volume(vol, stack, layout)
+    assert scaled[2, 2] > 0.4
+    assert clim[1] > clim[0]
 
 
 def test_label_volume_for_vispy_lut_size() -> None:

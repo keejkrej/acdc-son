@@ -109,6 +109,8 @@ def test_unique_labels_in_rect() -> None:
     mask[6:8, 6:8] = 2
     assert tools.unique_labels_in_rect(mask, 0, 0, 5, 5) == [1]
     assert tools.unique_labels_in_rect(mask, 0, 0, 9, 9) == [1, 2]
+    assert tools.unique_labels_in_rect(mask, 2, 2, 4, 4) == []
+    assert tools.unique_labels_in_rect(mask, 0, 0, 2, 2) == []
     assert tools.unique_labels_in_rect(mask, 8, 8, 8, 8) == []
 
 
@@ -132,6 +134,7 @@ def test_model_label_at_and_rect() -> None:
     assert model.label_at(0, 0) == 0
     assert model.labels_in_rect(0, 0, 5, 5) == [4]
     assert model.labels_in_rect(0, 0, 9, 9) == [4, 5]
+    assert model.labels_in_rect(3, 3, 5, 5) == []
 
 
 def test_end_stroke_fills_holes(tmp_path: Path) -> None:

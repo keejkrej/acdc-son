@@ -36,9 +36,9 @@ class SegmentationPresenter:
         v.t_index_changed.connect(self._on_t_changed)
         v.z_index_changed.connect(self._on_z_changed)
         v.label_visibility_changed.connect(self._on_label_visibility_changed)
-        v.add_fluorescence_requested.connect(self._on_add_fluorescence)
-        v.remove_fluorescence_requested.connect(self._on_remove_fluorescence)
-        v.bf_fluor_blend_changed.connect(self._on_bf_fluor_blend_changed)
+        v.add_secondary_requested.connect(self._on_add_secondary)
+        v.remove_secondary_requested.connect(self._on_remove_secondary)
+        v.primary_secondary_blend_changed.connect(self._on_primary_secondary_blend_changed)
         v.image_seg_blend_changed.connect(self._on_image_seg_blend_changed)
 
         c = v.canvas
@@ -59,67 +59,67 @@ class SegmentationPresenter:
         self._sync_controls()
         self._refresh()
 
-    def _on_add_fluorescence(self) -> None:
+    def _on_add_secondary(self) -> None:
         if not self._model.has_data:
             return
         if self._model.images_path is None:
             QMessageBox.information(
                 self._view,
                 "No channels",
-                "Fluorescence overlay requires a Cell-ACDC Images folder.",
+                "Secondary channel requires a Cell-ACDC Images folder.",
             )
             return
-        channels = self._model.fluorescence_sibling_channels()
+        channels = self._model.secondary_sibling_channels()
         if not channels:
             QMessageBox.information(
                 self._view,
                 "No channels",
-                "No other fluorescence channels are available in this Images folder.",
+                "No other channels are available as a secondary in this Images folder.",
             )
             return
         channel = self._view.ask_pick_overlay_channel(channels)
         if not channel:
             return
         try:
-            self._model.load_fluorescence_channel(channel)
+            self._model.load_secondary_channel(channel)
         except Exception as exc:
             QMessageBox.critical(self._view, "Overlay failed", str(exc))
             return
         self._refresh_view()
-        self._sync_fluorescence_ui()
+        self._sync_secondary_ui()
         self._sync_blend_ui()
 
-    def _on_remove_fluorescence(self) -> None:
-        self._model.clear_fluorescence()
+    def _on_remove_secondary(self) -> None:
+        self._model.clear_secondary()
         self._refresh_view()
-        self._sync_fluorescence_ui()
+        self._sync_secondary_ui()
         self._sync_blend_ui()
 
-    def _on_bf_fluor_blend_changed(self, value: int) -> None:
-        self._model.set_bf_fluor_blend(value)
-        self._view.canvas.set_bf_fluor_blend(value)
+    def _on_primary_secondary_blend_changed(self, value: int) -> None:
+        self._model.set_primary_secondary_blend(value)
+        self._view.canvas.set_primary_secondary_blend(value)
 
     def _on_image_seg_blend_changed(self, value: int) -> None:
         self._model.set_image_seg_blend(value)
         self._view.canvas.set_image_seg_blend(value)
 
-    def _sync_fluorescence_ui(self) -> None:
-        fluo = self._model.fluorescence
+    def _sync_secondary_ui(self) -> None:
+        secondary = self._model.secondary
         can_add = self._model.images_path is not None
-        self._view.set_fluorescence_ui(
+        self._view.set_secondary_ui(
             can_add=can_add,
-            active=fluo is not None,
-            channel_name=fluo.channel_name if fluo is not None else "",
+            active=secondary is not None,
+            channel_name=secondary.channel_name if secondary is not None else "",
         )
 
     def _sync_blend_ui(self) -> None:
-        fluo = self._model.fluorescence
+        secondary = self._model.secondary
         self._view.set_blend_ui(
             visible=self._model.has_data,
-            bf_fluor=int(round(self._model.bf_fluor_blend)),
+            primary_secondary=int(round(self._model.primary_secondary_blend)),
             image_seg=int(round(self._model.image_seg_blend)),
-            show_bf_fluor=fluo is not None,
-            channel_name=fluo.channel_name if fluo is not None else "",
+            show_primary_secondary=secondary is not None,
+            channel_name=secondary.channel_name if secondary is not None else "",
         )
 
     def _on_open_folder(self) -> None:
@@ -226,19 +226,17 @@ class SegmentationPresenter:
 
     def _on_label_id_changed(self, label_id: int) -> None:
         self._model.label_id = label_id
-        self._selected_label_ids = [label_id]
-        self._refresh_selection()
 
     def _on_brush_size_changed(self, size: int) -> None:
         self._model.brush_size = size
 
     def _on_t_changed(self, t: int) -> None:
         self._model.t_index = t
-        self._refresh_view()
+        self._refresh_slice()
 
     def _on_z_changed(self, z: int) -> None:
         self._model.z_index = z
-        self._refresh_view()
+        self._refresh_slice()
 
     def _on_label_visibility_changed(self) -> None:
         self._view.refresh_label_visibility()
@@ -306,19 +304,27 @@ class SegmentationPresenter:
         mask = self._model.current_mask_slice()
         return apply_label_visibility(mask, self._view.get_hidden_label_ids())
 
-    def _refresh_view(self) -> None:
-        if not self._model.has_data:
+    def _apply_display_levels(self) -> None:
+        levels = self._model.image_display_levels
+        if levels is not None:
+            self._view.canvas.set_image_display_levels(*levels)
+        secondary_levels = self._model.secondary_display_levels
+        if secondary_levels is not None:
+            self._view.canvas.set_secondary_display_levels(*secondary_levels)
+        else:
+            self._view.canvas.set_secondary_display_levels(None)
+
+    def _refresh_slice(self) -> None:
+        """Update the current T/Z slice only (frame slider hot path)."""
+        if not self._model.has_data or self._model.layout is None:
             return
         layout = self._model.layout
-        assert layout is not None
         t_max = max(0, layout.size_t - 1)
         z_max = max(0, layout.size_z - 1)
-        self._view.canvas.set_bf_fluor_blend(self._model.bf_fluor_blend)
-        self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
         self._view.refresh_display(
             self._model.current_image_slice(),
             self._model.current_mask_slice(),
-            overlay_slice=self._model.current_fluorescence_slice(),
+            overlay_slice=self._model.current_secondary_slice(),
         )
         self._refresh_selection()
         self._view.update_navigation_indices(
@@ -328,17 +334,31 @@ class SegmentationPresenter:
             z_max,
         )
 
+    def _refresh_view(self) -> None:
+        if not self._model.has_data:
+            return
+        self._view.canvas.set_primary_secondary_blend(self._model.primary_secondary_blend)
+        self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
+        self._apply_display_levels()
+        self._view.canvas.set_mask_max_label_id(self._model.max_label_id())
+        self._refresh_slice()
+
     def _refresh(self) -> None:
         if not self._model.has_data:
             return
-        self._refresh_view()
+        self._view.canvas.set_primary_secondary_blend(self._model.primary_secondary_blend)
+        self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
+        self._apply_display_levels()
+        self._view.canvas.set_mask_max_label_id(self._model.max_label_id())
+        self._refresh_slice()
         self._sync_controls()
-        self._sync_fluorescence_ui()
+        self._sync_secondary_ui()
         self._sync_blend_ui()
 
     def _refresh_mask_only(self) -> None:
         if not self._model.has_data:
             return
+        self._view.canvas.set_mask_max_label_id(self._model.max_label_id())
         self._view.refresh_mask(self._model.current_mask_slice())
         self._view.refresh_label_visibility()
         self._refresh_selection()

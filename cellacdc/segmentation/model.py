@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cellacdc.overlay import FluorescenceOverlay
+from cellacdc.overlay import SecondaryChannel
 
 from . import experiment, io, tools
 
@@ -41,9 +41,11 @@ class SegmentationModel:
         self._stroke_snapshot: np.ndarray | None = None
         self._last_paint_y: int | None = None
         self._last_paint_x: int | None = None
-        self.fluorescence: FluorescenceOverlay | None = None
-        self.bf_fluor_blend = 50.0
+        self.secondary: SecondaryChannel | None = None
+        self.primary_secondary_blend = 50.0
         self.image_seg_blend = 50.0
+        self.image_display_levels: tuple[float, float] | None = None
+        self.secondary_display_levels: tuple[float, float] | None = None
 
     @property
     def dirty(self) -> bool:
@@ -86,9 +88,11 @@ class SegmentationModel:
         self.title = imaged.title
         self.t_index = 0
         self.z_index = 0
-        self.fluorescence = None
+        self.secondary = None
+        self.secondary_display_levels = None
         self.dirty = False
         self._clear_history()
+        self._refresh_image_display_levels()
 
     def _clear_experiment_context(self) -> None:
         self.images_path = None
@@ -132,9 +136,11 @@ class SegmentationModel:
         self.title = title
         self.t_index = 0
         self.z_index = 0
-        self.fluorescence = None
+        self.secondary = None
+        self.secondary_display_levels = None
         self.dirty = False
         self._clear_history()
+        self._refresh_image_display_levels()
 
     def load_image(self, path: Path) -> None:
         path = Path(path)
@@ -210,21 +216,21 @@ class SegmentationModel:
         assert self.mask is not None and self.layout is not None
         return tools.extract_slice(self.mask, self.layout, self.t_index, self.z_index)
 
-    def current_fluorescence_slice(self) -> np.ndarray | None:
-        if self.fluorescence is None or self.layout is None:
+    def current_secondary_slice(self) -> np.ndarray | None:
+        if self.secondary is None or self.layout is None:
             return None
-        return self.fluorescence.slice_at(self.layout, self.t_index, self.z_index)
+        return self.secondary.slice_at(self.layout, self.t_index, self.z_index)
 
-    def fluorescence_sibling_channels(self) -> list[str]:
+    def secondary_sibling_channels(self) -> list[str]:
         if self.images_path is None:
             return []
         from cellacdc.overlay import list_sibling_channels
 
         return list_sibling_channels(self.images_path, exclude=self.channel_name)
 
-    def load_fluorescence_channel(self, channel_name: str) -> None:
+    def load_secondary_channel(self, channel_name: str) -> None:
         if not self.images_path or self.layout is None:
-            raise ValueError("Fluorescence overlay requires a Cell-ACDC Images folder")
+            raise ValueError("Secondary channel requires a Cell-ACDC Images folder")
         from cellacdc.overlay import load_channel_image
 
         image = load_channel_image(
@@ -232,13 +238,34 @@ class SegmentationModel:
             channel_name,
             layout=self.layout,
         )
-        self.fluorescence = FluorescenceOverlay(channel_name, image)
+        self.secondary = SecondaryChannel(channel_name, image)
+        self._refresh_secondary_display_levels()
 
-    def clear_fluorescence(self) -> None:
-        self.fluorescence = None
+    def clear_secondary(self) -> None:
+        self.secondary = None
+        self.secondary_display_levels = None
 
-    def set_bf_fluor_blend(self, value_0_to_100: float) -> None:
-        self.bf_fluor_blend = max(0.0, min(100.0, float(value_0_to_100)))
+    def _refresh_image_display_levels(self) -> None:
+        if self.image is None or self.layout is None:
+            self.image_display_levels = None
+            return
+        from cellacdc.display_levels import stack_autoscale_levels
+
+        self.image_display_levels = stack_autoscale_levels(self.image, self.layout)
+
+    def _refresh_secondary_display_levels(self) -> None:
+        if self.secondary is None or self.layout is None:
+            self.secondary_display_levels = None
+            return
+        from cellacdc.display_levels import stack_autoscale_levels
+
+        self.secondary_display_levels = stack_autoscale_levels(
+            self.secondary.image,
+            self.layout,
+        )
+
+    def set_primary_secondary_blend(self, value_0_to_100: float) -> None:
+        self.primary_secondary_blend = max(0.0, min(100.0, float(value_0_to_100)))
 
     def set_image_seg_blend(self, value_0_to_100: float) -> None:
         self.image_seg_blend = max(0.0, min(100.0, float(value_0_to_100)))
@@ -278,6 +305,12 @@ class SegmentationModel:
             return []
         ids = np.unique(self.mask)
         return sorted(int(label) for label in ids if label > 0)
+
+    def max_label_id(self) -> int:
+        """Return the highest label ID in the full mask volume."""
+        if self.mask is None:
+            return 0
+        return int(self.mask.max())
 
     def set_mask_slice(self, slice_2d: np.ndarray) -> None:
         assert self.mask is not None and self.layout is not None

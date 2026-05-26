@@ -1,4 +1,4 @@
-"""Optional fluorescence channel overlay (shared by 2D and 3D viewers)."""
+"""Optional secondary channel overlay (shared by 2D and 3D viewers)."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from cellacdc.segmentation import experiment, io, tools
 
 
 @dataclass
-class FluorescenceOverlay:
-    """Second fluorescence channel aligned to the primary image volume."""
+class SecondaryChannel:
+    """Second imaging channel aligned to the primary image volume."""
 
     channel_name: str
     image: np.ndarray

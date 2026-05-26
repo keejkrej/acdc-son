@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from cellacdc.data import ImagedData, SegmentationResult, default_segmentation
-from cellacdc.overlay import FluorescenceOverlay
+from cellacdc.display_levels import stack_display_levels
+from cellacdc.overlay import SecondaryChannel
 
 
 class VolumeModel:
@@ -16,9 +17,13 @@ class VolumeModel:
         self.result: SegmentationResult | None = None
         self.t_index = 0
         self.label_id = 1
-        self.fluorescence: FluorescenceOverlay | None = None
-        self.bf_fluor_blend = 50.0
+        self.secondary: SecondaryChannel | None = None
+        self.primary_secondary_blend = 50.0
         self.image_seg_blend = 50.0
+        self.primary_stack_levels: tuple[float, float] | None = None
+        self.primary_display_clim: tuple[float, float] | None = None
+        self.secondary_stack_levels: tuple[float, float] | None = None
+        self.secondary_display_clim: tuple[float, float] | None = None
 
     @property
     def has_data(self) -> bool:
@@ -29,10 +34,13 @@ class VolumeModel:
         self.imaged = imaged
         self.result = mask
         self.t_index = 0
-        self.fluorescence = None
+        self.secondary = None
+        self.secondary_stack_levels = None
+        self.secondary_display_clim = None
+        self._refresh_primary_display_levels()
         return mask
 
-    def fluorescence_sibling_channels(self) -> list[str]:
+    def secondary_sibling_channels(self) -> list[str]:
         if self.imaged is None or self.imaged.images_path is None:
             return []
         from cellacdc.overlay import list_sibling_channels
@@ -42,9 +50,9 @@ class VolumeModel:
             exclude=self.imaged.channel_name,
         )
 
-    def load_fluorescence_channel(self, channel_name: str) -> None:
+    def load_secondary_channel(self, channel_name: str) -> None:
         if self.imaged is None or self.imaged.images_path is None:
-            raise ValueError("Fluorescence overlay requires a Cell-ACDC Images folder")
+            raise ValueError("Secondary channel requires a Cell-ACDC Images folder")
         from cellacdc.overlay import load_channel_image
 
         image = load_channel_image(
@@ -52,13 +60,36 @@ class VolumeModel:
             channel_name,
             layout=self.imaged.layout,
         )
-        self.fluorescence = FluorescenceOverlay(channel_name, image)
+        self.secondary = SecondaryChannel(channel_name, image)
+        self._refresh_secondary_display_levels()
 
-    def clear_fluorescence(self) -> None:
-        self.fluorescence = None
+    def clear_secondary(self) -> None:
+        self.secondary = None
+        self.secondary_stack_levels = None
+        self.secondary_display_clim = None
 
-    def set_bf_fluor_blend(self, value_0_to_100: float) -> None:
-        self.bf_fluor_blend = max(0.0, min(100.0, float(value_0_to_100)))
+    def _refresh_primary_display_levels(self) -> None:
+        if self.imaged is None:
+            self.primary_stack_levels = None
+            self.primary_display_clim = None
+            return
+        (self.primary_stack_levels, self.primary_display_clim) = stack_display_levels(
+            self.imaged.image,
+            self.imaged.layout,
+        )
+
+    def _refresh_secondary_display_levels(self) -> None:
+        if self.secondary is None or self.imaged is None:
+            self.secondary_stack_levels = None
+            self.secondary_display_clim = None
+            return
+        (self.secondary_stack_levels, self.secondary_display_clim) = stack_display_levels(
+            self.secondary.image,
+            self.imaged.layout,
+        )
+
+    def set_primary_secondary_blend(self, value_0_to_100: float) -> None:
+        self.primary_secondary_blend = max(0.0, min(100.0, float(value_0_to_100)))
 
     def set_image_seg_blend(self, value_0_to_100: float) -> None:
         self.image_seg_blend = max(0.0, min(100.0, float(value_0_to_100)))

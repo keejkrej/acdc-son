@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from cellacdc.data import ImagedData, SegmentationResult
+from cellacdc.display_levels import autoscale_levels, scale_to_unit, stack_display_levels
 from cellacdc.segmentation import tools
 
 
@@ -43,15 +44,39 @@ def mask_volume_zyx(
     return np.asarray(vol4[t])
 
 
-def normalize_image_volume(volume: np.ndarray) -> tuple[np.ndarray, tuple[float, float]]:
-    """Scale a volume to ``float32`` in ``[0, 1]`` and return original clim."""
+def normalize_image_volume(
+    volume: np.ndarray,
+    *,
+    stack_lo: float | None = None,
+    stack_hi: float | None = None,
+    display_clim: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, tuple[float, float]]:
+    """Scale a volume to ``float32`` in ``[0, 1]`` using precomputed stack levels."""
     vol = np.asarray(volume, dtype=np.float32)
-    vmin = float(vol.min())
-    vmax = float(vol.max())
-    if vmax <= vmin:
-        vmax = vmin + 1.0
-    scaled = (vol - vmin) / (vmax - vmin)
-    return np.ascontiguousarray(scaled), (0.0, 1.0)
+    if stack_lo is None or stack_hi is None:
+        stack_lo, stack_hi = autoscale_levels(vol)
+    scaled = scale_to_unit(vol, stack_lo, stack_hi)
+    clim = display_clim if display_clim is not None else autoscale_levels(scaled)
+    return np.ascontiguousarray(scaled), clim
+
+
+def normalize_image_stack_volume(
+    volume: np.ndarray,
+    full_stack: np.ndarray,
+    layout: tools.StackLayout,
+    *,
+    stack_levels: tuple[float, float] | None = None,
+    display_clim: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, tuple[float, float]]:
+    """Normalize one volume using stack levels computed once at load."""
+    if stack_levels is None or display_clim is None:
+        stack_levels, display_clim = stack_display_levels(full_stack, layout)
+    return normalize_image_volume(
+        volume,
+        stack_lo=stack_levels[0],
+        stack_hi=stack_levels[1],
+        display_clim=display_clim,
+    )
 
 
 def voxel_display_scale(dz: float, dy: float, dx: float) -> tuple[float, float, float]:

@@ -230,7 +230,7 @@ def unique_labels_in_rect(
     y1: int,
     x1: int,
 ) -> list[int]:
-    """Return sorted label IDs with pixels inside the inclusive rectangle."""
+    """Return sorted label IDs fully contained in the inclusive rectangle."""
     ymin, xmin, ymax, xmax = normalize_rect(y0, x0, y1, x1)
     h, w = mask_slice.shape
     ymin = max(0, ymin)
@@ -240,8 +240,20 @@ def unique_labels_in_rect(
     if ymin > ymax or xmin > xmax:
         return []
     region = mask_slice[ymin : ymax + 1, xmin : xmax + 1]
-    ids = np.unique(region)
-    return sorted(int(label) for label in ids if label > 0)
+    contained: list[int] = []
+    for label in np.unique(region):
+        label_id = int(label)
+        if label_id <= 0:
+            continue
+        ys, xs = np.where(mask_slice == label_id)
+        if (
+            ys.min() >= ymin
+            and ys.max() <= ymax
+            and xs.min() >= xmin
+            and xs.max() <= xmax
+        ):
+            contained.append(label_id)
+    return sorted(contained)
 
 
 def label_bounding_box(

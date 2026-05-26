@@ -6,7 +6,7 @@ import numpy as np
 import pyqtgraph as pg
 
 _LABEL_ALPHA = int(round(0.45 * 255))
-_DEFAULT_LUT_SIZE = 4096
+_DEFAULT_LUT_SIZE = 2
 
 
 def lut_with_hidden_labels(lut: np.ndarray, hidden_ids: set[int]) -> np.ndarray:
@@ -45,20 +45,11 @@ class BaseLutBar(pg.HistogramLUTItem):
 
 
 class ImageLutBar(BaseLutBar):
-    """Left LUT bar linked to the loaded microscopy image."""
+    """Left LUT bar linked to a grayscale microscopy channel."""
 
-    def __init__(self, image_item: pg.ImageItem) -> None:
-        super().__init__(axis_label="Image", gradient_position="right")
-        self.gradient.loadPreset("grey")
-        self.setImageItem(image_item)
-
-
-class FluorescenceLutBar(BaseLutBar):
-    """LUT bar for an optional fluorescence overlay channel."""
-
-    def __init__(self, image_item: pg.ImageItem, *, axis_label: str = "Fluo") -> None:
+    def __init__(self, image_item: pg.ImageItem, *, axis_label: str = "Image") -> None:
         super().__init__(axis_label=axis_label, gradient_position="right")
-        self.gradient.loadPreset("yellowy")
+        self.gradient.loadPreset("grey")
         self.setImageItem(image_item)
 
 
@@ -93,6 +84,13 @@ class SegmentationLutBar(BaseLutBar):
         lut[0] = (0, 0, 0, 0)
         return lut
 
+    def set_label_display_max(self, max_label_id: int) -> None:
+        """Size the LUT and histogram range to the highest label ID in view."""
+        display_max = max(int(max_label_id), 1)
+        self.ensure_lut_size(display_max + 1)
+        self.setLevels(0, display_max)
+        self._apply_lut()
+
     def _apply_lut(self) -> None:
         lut = np.array(
             self.gradient.getLookupTable(self._lut_size, alpha=_LABEL_ALPHA),
@@ -100,4 +98,5 @@ class SegmentationLutBar(BaseLutBar):
         )
         lut[0] = (0, 0, 0, 0)
         self._mask_item.setLookupTable(lut)
-        self._mask_item.setLevels([0, self._lut_size - 1])
+        lo, hi = self.getLevels()
+        self._mask_item.setLevels([lo, hi])

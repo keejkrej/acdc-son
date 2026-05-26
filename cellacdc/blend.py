@@ -1,4 +1,4 @@
-"""Crossfade math for brightfield, fluorescence, and segmentation layers."""
+"""Crossfade math for primary, secondary, and segmentation layers."""
 
 from __future__ import annotations
 
@@ -10,15 +10,15 @@ def crossfade_opacities(value_0_to_100: float) -> tuple[float, float]:
 
 
 def layer_opacities(
-    bf_fluor_blend_0_to_100: float,
+    primary_secondary_blend_0_to_100: float,
     image_seg_blend_0_to_100: float,
     *,
-    has_fluorescence: bool,
+    has_secondary: bool,
 ) -> tuple[float, float, float]:
-    """Return ``(bf_opacity, fluo_opacity, seg_opacity)`` for display layers."""
-    if has_fluorescence:
-        bf_w, fluo_w = crossfade_opacities(bf_fluor_blend_0_to_100)
+    """Return ``(primary_opacity, secondary_opacity, seg_opacity)`` for display layers."""
+    if has_secondary:
+        primary_w, secondary_w = crossfade_opacities(primary_secondary_blend_0_to_100)
     else:
-        bf_w, fluo_w = 1.0, 0.0
+        primary_w, secondary_w = 1.0, 0.0
     image_scale, seg_scale = crossfade_opacities(image_seg_blend_0_to_100)
-    return bf_w * image_scale, fluo_w * image_scale, seg_scale
+    return primary_w * image_scale, secondary_w * image_scale, seg_scale

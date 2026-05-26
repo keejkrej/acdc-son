@@ -28,7 +28,7 @@ class VolumeViewerFrame(QWidget):
     """Volume canvas with crossfade and frame controls (no Z-slice scrub)."""
 
     t_index_changed = Signal(int)
-    bf_fluor_blend_changed = Signal(int)
+    primary_secondary_blend_changed = Signal(int)
     image_seg_blend_changed = Signal(int)
 
     def __init__(self, canvas: VolumeCanvas, parent: QWidget | None = None) -> None:
@@ -45,9 +45,9 @@ class VolumeViewerFrame(QWidget):
         bottom_layout.setSpacing(0)
 
         self._blend_bar = BlendControlBar()
-        self._blend_bar.bf_fluor_changed.connect(self.bf_fluor_blend_changed.emit)
+        self._blend_bar.primary_secondary_changed.connect(self.primary_secondary_blend_changed.emit)
         self._blend_bar.image_seg_changed.connect(self.image_seg_blend_changed.emit)
-        self._blend_bar.bf_fluor_changed.connect(self._on_bf_fluor_changed)
+        self._blend_bar.primary_secondary_changed.connect(self._on_primary_secondary_changed)
         self._blend_bar.image_seg_changed.connect(self._on_image_seg_changed)
         bottom_layout.addWidget(self._blend_bar)
 
@@ -66,33 +66,33 @@ class VolumeViewerFrame(QWidget):
 
         layout.addWidget(bottom)
         self._on_image_seg_changed(50)
-        self._on_bf_fluor_changed(50)
+        self._on_primary_secondary_changed(50)
         self._blend_bar.setVisible(False)
 
     def _on_image_seg_changed(self, value: int) -> None:
         self.canvas.set_image_seg_blend(value)
 
-    def _on_bf_fluor_changed(self, value: int) -> None:
-        self.canvas.set_bf_fluor_blend(value)
+    def _on_primary_secondary_changed(self, value: int) -> None:
+        self.canvas.set_primary_secondary_blend(value)
 
     def set_blend_controls(
         self,
         *,
         visible: bool,
-        bf_fluor: int,
+        primary_secondary: int,
         image_seg: int,
-        show_bf_fluor: bool,
+        show_primary_secondary: bool,
         channel_name: str = "",
     ) -> None:
         self._blend_bar.setVisible(visible)
         if visible:
             self._blend_bar.set_values(
-                bf_fluor=bf_fluor,
+                primary_secondary=primary_secondary,
                 image_seg=image_seg,
-                show_bf_fluor=show_bf_fluor,
+                show_primary_secondary=show_primary_secondary,
                 channel_name=channel_name,
             )
-            self.canvas.set_bf_fluor_blend(bf_fluor)
+            self.canvas.set_primary_secondary_blend(primary_secondary)
             self.canvas.set_image_seg_blend(image_seg)
 
     def set_navigation(self, t: int, t_max: int, z: int, z_max: int) -> None:
@@ -120,18 +120,19 @@ class VolumeView(QMainWindow):
     label_id_changed = Signal(int)
     label_visibility_changed = Signal()
     t_index_changed = Signal(int)
-    bf_fluor_blend_changed = Signal(int)
+    primary_secondary_blend_changed = Signal(int)
     image_seg_blend_changed = Signal(int)
-    add_fluorescence_requested = Signal()
-    remove_fluorescence_requested = Signal()
+    add_secondary_requested = Signal()
+    remove_secondary_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
+        self.resize(1280, 720)
         self.setWindowTitle("Cell-ACDC — 3D Volume")
         self._canvas = VolumeCanvas()
         self._viewer = VolumeViewerFrame(self._canvas)
         self._viewer.t_index_changed.connect(self.t_index_changed.emit)
-        self._viewer.bf_fluor_blend_changed.connect(self.bf_fluor_blend_changed.emit)
+        self._viewer.primary_secondary_blend_changed.connect(self.primary_secondary_blend_changed.emit)
         self._viewer.image_seg_blend_changed.connect(self.image_seg_blend_changed.emit)
         self.setCentralWidget(self._viewer)
         self._build_actions()
@@ -151,11 +152,11 @@ class VolumeView(QMainWindow):
         self._open_file_act.setIcon(lucide_qicon(LucideIcon.FILE_IMAGE))
         self._open_file_act.triggered.connect(self.open_image_file_requested.emit)
 
-        self._add_fluo_act = QAction("Add fluorescence channel…", self)
-        self._add_fluo_act.triggered.connect(self.add_fluorescence_requested.emit)
-        self._remove_fluo_act = QAction("Remove fluorescence channel", self)
-        self._remove_fluo_act.setEnabled(False)
-        self._remove_fluo_act.triggered.connect(self.remove_fluorescence_requested.emit)
+        self._add_secondary_act = QAction("Add secondary channel…", self)
+        self._add_secondary_act.triggered.connect(self.add_secondary_requested.emit)
+        self._remove_secondary_act = QAction("Remove secondary channel", self)
+        self._remove_secondary_act.setEnabled(False)
+        self._remove_secondary_act.triggered.connect(self.remove_secondary_requested.emit)
 
         self._hand_act = QAction("Hand", self)
         self._hand_act.setIcon(lucide_qicon(LucideIcon.HAND))
@@ -173,8 +174,8 @@ class VolumeView(QMainWindow):
         file_menu.addAction(self._open_folder_act)
         file_menu.addAction(self._open_file_act)
         file_menu.addSeparator()
-        file_menu.addAction(self._add_fluo_act)
-        file_menu.addAction(self._remove_fluo_act)
+        file_menu.addAction(self._add_secondary_act)
+        file_menu.addAction(self._remove_secondary_act)
         file_menu.addSeparator()
         quit_act = QAction("&Quit", self)
         quit_act.setShortcut("Ctrl+Q")
@@ -231,30 +232,30 @@ class VolumeView(QMainWindow):
     def set_status(self, text: str) -> None:
         self.statusBar().showMessage(text)
 
-    def set_fluorescence_ui(
+    def set_secondary_ui(
         self,
         *,
         can_add: bool,
         active: bool,
         channel_name: str = "",
     ) -> None:
-        self._add_fluo_act.setEnabled(can_add)
-        self._remove_fluo_act.setEnabled(active)
+        self._add_secondary_act.setEnabled(can_add)
+        self._remove_secondary_act.setEnabled(active)
 
     def set_blend_ui(
         self,
         *,
         visible: bool,
-        bf_fluor: int,
+        primary_secondary: int,
         image_seg: int,
-        show_bf_fluor: bool,
+        show_primary_secondary: bool,
         channel_name: str = "",
     ) -> None:
         self._viewer.set_blend_controls(
             visible=visible,
-            bf_fluor=bf_fluor,
+            primary_secondary=primary_secondary,
             image_seg=image_seg,
-            show_bf_fluor=show_bf_fluor,
+            show_primary_secondary=show_primary_secondary,
             channel_name=channel_name,
         )
 
@@ -290,7 +291,7 @@ class VolumeView(QMainWindow):
         return pick_from_list(self, "Select channel", names)
 
     def ask_pick_overlay_channel(self, names: list[str]) -> str | None:
-        return pick_from_list(self, "Select fluorescence channel", names)
+        return pick_from_list(self, "Select secondary channel", names)
 
     def _pick_from_list(self, title: str, names: list[str]) -> str | None:
         return pick_from_list(self, title, names)

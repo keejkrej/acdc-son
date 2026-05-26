@@ -10,20 +10,11 @@ _LABEL_ALPHA = int(round(0.45 * 255))
 
 
 class VolumeImageLutBar(BaseLutBar):
-    """Left LUT bar driving the vispy image volume colormap."""
+    """LUT bar driving a vispy grayscale volume colormap."""
 
-    def __init__(self) -> None:
-        super().__init__(axis_label="Image", gradient_position="right")
-        self.gradient.loadPreset("grey")
-        self.setLevels(0, 1)
-
-
-class VolumeFluorescenceLutBar(BaseLutBar):
-    """Fluorescence overlay LUT for the 3D viewer."""
-
-    def __init__(self, *, axis_label: str = "Fluo") -> None:
+    def __init__(self, *, axis_label: str = "Image") -> None:
         super().__init__(axis_label=axis_label, gradient_position="right")
-        self.gradient.loadPreset("yellowy")
+        self.gradient.loadPreset("grey")
         self.setLevels(0, 1)
 
 

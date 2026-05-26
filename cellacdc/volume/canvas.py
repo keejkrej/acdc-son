@@ -9,7 +9,7 @@ from qtpy.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from cellacdc.blend import layer_opacities
 from cellacdc.volume.cmaps import label_lut_to_vispy, pg_colormap_to_vispy
-from cellacdc.volume.lut import VolumeFluorescenceLutBar, VolumeImageLutBar, VolumeLabelLutBar
+from cellacdc.volume.lut import VolumeImageLutBar, VolumeLabelLutBar
 from cellacdc.volume.prepare import voxel_display_scale
 
 
@@ -38,10 +38,10 @@ class VolumeCanvas(QWidget):
         self._view = None
         self._image_node = None
         self._label_node = None
-        self._fluo_node = None
-        self._bf_fluor_blend = 50.0
+        self._secondary_node = None
+        self._primary_secondary_blend = 50.0
         self._image_seg_blend = 50.0
-        self._has_fluorescence = False
+        self._has_secondary = False
         self._voxel_dz = 1.0
         self._voxel_dy = 1.0
         self._voxel_dx = 1.0
@@ -54,22 +54,24 @@ class VolumeCanvas(QWidget):
 
         self._image_lut = VolumeImageLutBar()
         self._image_lut.gradient.sigGradientChanged.connect(self._on_image_lut_changed)
-        self._fluo_lut = VolumeFluorescenceLutBar()
-        self._fluo_lut.gradient.sigGradientChanged.connect(self._on_fluo_lut_changed)
+        self._image_lut.sigLevelsChanged.connect(self._on_image_lut_changed)
+        self._secondary_lut = VolumeImageLutBar(axis_label="Secondary")
+        self._secondary_lut.gradient.sigGradientChanged.connect(self._on_secondary_lut_changed)
+        self._secondary_lut.sigLevelsChanged.connect(self._on_secondary_lut_changed)
         self._label_lut = VolumeLabelLutBar()
         self._label_lut.gradient.sigGradientChanged.connect(self._on_label_lut_changed)
 
         self._left_stack = QWidget()
-        left_layout = QVBoxLayout(self._left_stack)
+        left_layout = QHBoxLayout(self._left_stack)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
         self._image_lut_column = _LutColumn(self._image_lut)
-        self._fluo_lut_column = _LutColumn(self._fluo_lut)
-        self._fluo_lut_column.setVisible(False)
+        self._secondary_lut_column = _LutColumn(self._secondary_lut)
+        self._secondary_lut_column.setVisible(False)
         left_layout.addWidget(self._image_lut_column, stretch=1)
-        left_layout.addWidget(self._fluo_lut_column, stretch=1)
-        self._left_stack.setMinimumWidth(95)
-        self._left_stack.setMaximumWidth(115)
+        left_layout.addWidget(self._secondary_lut_column, stretch=1)
+        self._left_stack.setMinimumWidth(190)
+        self._left_stack.setMaximumWidth(230)
 
         self._canvas_host = QWidget()
         self._canvas_host.setMinimumSize(480, 360)
@@ -82,8 +84,8 @@ class VolumeCanvas(QWidget):
 
         self._ensure_vispy()
 
-    def set_bf_fluor_blend(self, value_0_to_100: int) -> None:
-        self._bf_fluor_blend = max(0.0, min(100.0, float(value_0_to_100)))
+    def set_primary_secondary_blend(self, value_0_to_100: int) -> None:
+        self._primary_secondary_blend = max(0.0, min(100.0, float(value_0_to_100)))
         self._apply_layer_blend()
 
     def set_image_seg_blend(self, value_0_to_100: int) -> None:
@@ -103,6 +105,7 @@ class VolumeCanvas(QWidget):
         label_volume: np.ndarray | None,
         *,
         label_lut_size: int,
+        image_clim: tuple[float, float] = (0.0, 1.0),
     ) -> None:
         self._ensure_vispy()
         assert self._image_node is not None
@@ -113,6 +116,7 @@ class VolumeCanvas(QWidget):
         self._label_lut.set_lut_size(label_lut_size)
 
         self._image_node.set_data(np.ascontiguousarray(image_volume, dtype=np.float32))
+        self._image_lut.setLevels(*image_clim)
         self._apply_image_style()
 
         if label_volume is not None and np.any(label_volume):
@@ -127,26 +131,34 @@ class VolumeCanvas(QWidget):
         self._apply_layer_blend()
         self._canvas.update()
 
-    def set_fluorescence_volume(self, volume: np.ndarray) -> None:
+    def set_secondary_volume(
+        self,
+        volume: np.ndarray,
+        *,
+        clim: tuple[float, float] = (0.0, 1.0),
+    ) -> None:
         self._ensure_vispy()
-        assert self._fluo_node is not None
+        assert self._secondary_node is not None
         assert self._canvas is not None
 
-        self._fluo_node.set_data(np.ascontiguousarray(volume, dtype=np.float32))
-        self._apply_fluorescence_style()
-        self._fluo_node.visible = True
-        self._has_fluorescence = True
-        self._fluo_lut_column.setVisible(True)
-        self._apply_voxel_scale(self._fluo_node)
+        self._secondary_node.set_data(np.ascontiguousarray(volume, dtype=np.float32))
+        self._secondary_lut.setLevels(*clim)
+        self._apply_secondary_style()
+        self._secondary_node.visible = True
+        self._has_secondary = True
+        self._secondary_lut_column.setVisible(True)
+        self._apply_voxel_scale(self._secondary_node)
         self._apply_layer_blend()
+        self._sync_left_lut_width()
         self._schedule_fit_camera()
         self._canvas.update()
 
-    def clear_fluorescence_volume(self) -> None:
-        if self._fluo_node is not None:
-            self._fluo_node.visible = False
-        self._has_fluorescence = False
-        self._fluo_lut_column.setVisible(False)
+    def clear_secondary_volume(self) -> None:
+        if self._secondary_node is not None:
+            self._secondary_node.visible = False
+        self._has_secondary = False
+        self._secondary_lut_column.setVisible(False)
+        self._sync_left_lut_width()
         self._apply_layer_blend()
         if self._canvas is not None:
             self._canvas.update()
@@ -206,11 +218,11 @@ class VolumeCanvas(QWidget):
             parent=self._view.scene,
         )
         self._label_node.visible = False
-        self._fluo_node = visuals.Volume(
+        self._secondary_node = visuals.Volume(
             np.zeros((2, 2, 2), dtype=np.float32),
             parent=self._view.scene,
         )
-        self._fluo_node.visible = False
+        self._secondary_node.visible = False
         gloo.set_state(blend=True, depth_test=False)
         self._vispy_ready = True
 
@@ -238,17 +250,33 @@ class VolumeCanvas(QWidget):
         if node is not None:
             targets = [node]
         else:
-            targets = [self._image_node, self._label_node, self._fluo_node]
+            targets = [self._image_node, self._label_node, self._secondary_node]
         for target in targets:
             if target is not None:
                 target.transform = transform
         if self._canvas is not None:
             self._canvas.update()
 
+    def _sync_left_lut_width(self) -> None:
+        if self._has_secondary:
+            self._left_stack.setMinimumWidth(190)
+            self._left_stack.setMaximumWidth(230)
+        else:
+            self._left_stack.setMinimumWidth(95)
+            self._left_stack.setMaximumWidth(115)
+
+    def _clim_from_lut(self, lut_bar: VolumeImageLutBar) -> tuple[float, float]:
+        lo, hi = lut_bar.getLevels()
+        lo = float(lo)
+        hi = float(hi)
+        if hi <= lo:
+            hi = lo + 1e-6
+        return lo, hi
+
     def _apply_image_style(self) -> None:
         assert self._image_node is not None
         self._image_node.cmap = pg_colormap_to_vispy(self._image_lut.gradient.colorMap())
-        self._image_node.clim = (0.0, 1.0)
+        self._image_node.clim = self._clim_from_lut(self._image_lut)
 
     def _apply_label_style(self) -> None:
         assert self._label_node is not None
@@ -257,21 +285,21 @@ class VolumeCanvas(QWidget):
         n = float(self._label_lut.lut_size)
         self._label_node.clim = (-0.5, n - 0.5)
 
-    def _apply_fluorescence_style(self) -> None:
-        assert self._fluo_node is not None
-        self._fluo_node.cmap = pg_colormap_to_vispy(self._fluo_lut.gradient.colorMap())
-        self._fluo_node.clim = (0.0, 1.0)
+    def _apply_secondary_style(self) -> None:
+        assert self._secondary_node is not None
+        self._secondary_node.cmap = pg_colormap_to_vispy(self._secondary_lut.gradient.colorMap())
+        self._secondary_node.clim = self._clim_from_lut(self._secondary_lut)
 
     def _apply_layer_blend(self) -> None:
-        bf_opacity, fluo_opacity, seg_opacity = layer_opacities(
-            self._bf_fluor_blend,
+        primary_opacity, secondary_opacity, seg_opacity = layer_opacities(
+            self._primary_secondary_blend,
             self._image_seg_blend,
-            has_fluorescence=self._has_fluorescence,
+            has_secondary=self._has_secondary,
         )
         if self._image_node is not None:
-            self._image_node.opacity = bf_opacity
-        if self._fluo_node is not None and self._fluo_node.visible:
-            self._fluo_node.opacity = fluo_opacity
+            self._image_node.opacity = primary_opacity
+        if self._secondary_node is not None and self._secondary_node.visible:
+            self._secondary_node.opacity = secondary_opacity
         if self._label_node is not None and self._label_node.visible:
             self._label_node.opacity = seg_opacity
         if self._canvas is not None:
@@ -289,9 +317,9 @@ class VolumeCanvas(QWidget):
             if self._canvas is not None:
                 self._canvas.update()
 
-    def _on_fluo_lut_changed(self) -> None:
-        if self._fluo_node is not None and self._fluo_node.visible:
-            self._apply_fluorescence_style()
+    def _on_secondary_lut_changed(self) -> None:
+        if self._secondary_node is not None and self._secondary_node.visible:
+            self._apply_secondary_style()
             if self._canvas is not None:
                 self._canvas.update()
 
