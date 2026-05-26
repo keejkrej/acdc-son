@@ -74,6 +74,17 @@ def test_apply_label_visibility() -> None:
     assert hidden[6, 6] == 0
 
 
+def test_lut_with_hidden_labels() -> None:
+    from cellacdc.segmentation.lut import lut_with_hidden_labels
+
+    lut = np.zeros((8, 4), dtype=np.uint8)
+    lut[1] = (255, 0, 0, 128)
+    lut[2] = (0, 255, 0, 128)
+    out = lut_with_hidden_labels(lut, {2})
+    assert out[1, 3] == 128
+    assert tuple(out[2]) == (0, 0, 0, 0)
+
+
 def test_find_outer_boundaries() -> None:
     mask = np.zeros((8, 8), dtype=np.uint32)
     mask[2:6, 2:6] = 1

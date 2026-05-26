@@ -10,7 +10,7 @@ import numpy as np
 from . import experiment, io, tools
 
 if TYPE_CHECKING:
-    from cellacdc.data import Experiment, SegmentationResult
+    from cellacdc.data import ImagedData, SegmentationResult
 
 
 class SegmentationModel:
@@ -61,24 +61,24 @@ class SegmentationModel:
     def has_data(self) -> bool:
         return self.image is not None and self.mask is not None and self.layout is not None
 
-    def open(self, experiment: Experiment, result: SegmentationResult) -> None:
-        """Bind in-memory experiment input and a live segmentation result."""
-        if result.mask.shape != experiment.image.shape:
+    def open(self, imaged: ImagedData, result: SegmentationResult) -> None:
+        """Bind in-memory image input and a live segmentation result."""
+        if result.mask.shape != imaged.image.shape:
             raise ValueError(
                 f"Mask shape {result.mask.shape} does not match "
-                f"image shape {experiment.image.shape}"
+                f"image shape {imaged.image.shape}"
             )
-        self.image = experiment.image
+        self.image = imaged.image
         self.mask = result.mask
-        self.layout = experiment.layout
+        self.layout = imaged.layout
         self._result = result
-        self.image_path = experiment.image_path
-        self.mask_path = result.save_path or experiment.mask_path
-        self.images_path = experiment.images_path
-        self.position_name = experiment.position_name
-        self.basename = experiment.basename
-        self.channel_name = experiment.channel_name
-        self.title = experiment.title
+        self.image_path = imaged.image_path
+        self.mask_path = result.save_path or imaged.mask_path
+        self.images_path = imaged.images_path
+        self.position_name = imaged.position_name
+        self.basename = imaged.basename
+        self.channel_name = imaged.channel_name
+        self.title = imaged.title
         self.t_index = 0
         self.z_index = 0
         self.dirty = False

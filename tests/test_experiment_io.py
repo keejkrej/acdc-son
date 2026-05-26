@@ -162,4 +162,29 @@ def test_load_image_file_without_metadata_uses_heuristic(tmp_path: Path) -> None
     assert model.layout is not None
     assert model.layout.has_z and not model.layout.has_time
     assert model.mask_path == tmp_path / "stacksegm.npz"
-    assert model.images_path is None
+
+
+def test_load_metadata_voxel_sizes(tmp_path: Path) -> None:
+    images = _make_position(tmp_path, "Position_1", size_z=8)
+    metadata_path = images / "test_s01_metadata.csv"
+    metadata_path.write_text(
+        metadata_path.read_text(encoding="utf-8")
+        + "PhysicalSizeZ,2.5\nPhysicalSizeY,0.5\nPhysicalSizeX,0.5\n",
+        encoding="utf-8",
+    )
+    dz, dy, dx = experiment.load_metadata_voxel_sizes(images)
+    assert dz == 2.5
+    assert dy == 0.5
+    assert dx == 0.5
+
+
+def test_build_load_spec_includes_voxel_sizes(tmp_path: Path) -> None:
+    images = _make_position(tmp_path, "Position_1")
+    metadata_path = images / "test_s01_metadata.csv"
+    metadata_path.write_text(
+        metadata_path.read_text(encoding="utf-8") + "PhysicalSizeZ,3\nPhysicalSizeX,1\n",
+        encoding="utf-8",
+    )
+    spec = experiment.build_load_spec(images, "phase")
+    assert spec.physical_size_z == 3.0
+    assert spec.physical_size_x == 1.0

@@ -7,7 +7,7 @@ import warnings
 from typing import TYPE_CHECKING, ClassVar
 from weakref import WeakSet
 
-from cellacdc.data import Experiment, SegmentationResult, default_segmentation
+from cellacdc.data import ImagedData, SegmentationResult, default_segmentation
 
 if TYPE_CHECKING:
     from qtpy.QtWidgets import QApplication
@@ -71,13 +71,13 @@ class SegmentationViewer:
 
     def open(
         self,
-        experiment: Experiment,
+        imaged: ImagedData,
         *,
         result: SegmentationResult | None = None,
     ) -> SegmentationResult:
-        """Bind ``experiment`` and a live ``result`` mask to this viewer."""
-        mask_result = result if result is not None else default_segmentation(experiment)
-        self._presenter.open(experiment, mask_result)
+        """Bind ``imaged`` and a live ``result`` mask to this viewer."""
+        mask_result = result if result is not None else default_segmentation(imaged)
+        self._presenter.open(imaged, mask_result)
         self._result = mask_result
         return mask_result
 
@@ -98,7 +98,7 @@ def current_viewer() -> SegmentationViewer | None:
 
 
 def imshow(
-    data: Experiment,
+    data: ImagedData,
     *,
     result: SegmentationResult | None = None,
     viewer: SegmentationViewer | None = None,

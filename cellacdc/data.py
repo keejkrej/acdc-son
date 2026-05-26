@@ -11,8 +11,8 @@ from cellacdc.segmentation import experiment, io, tools
 
 
 @dataclass(frozen=True)
-class Experiment:
-    """Read-only microscopy input: image volume plus layout metadata."""
+class ImagedData:
+    """Read-only microscopy image volume plus layout metadata."""
 
     image: np.ndarray
     layout: tools.StackLayout
@@ -23,6 +23,9 @@ class Experiment:
     position_name: str | None = None
     basename: str | None = None
     channel_name: str | None = None
+    physical_size_z: float = 1.0
+    physical_size_y: float = 1.0
+    physical_size_x: float = 1.0
 
     @classmethod
     def from_path(
@@ -31,7 +34,7 @@ class Experiment:
         *,
         position: str | None = None,
         channel: str | None = None,
-    ) -> Experiment:
+    ) -> ImagedData:
         """Load from a Cell-ACDC experiment, position, Images, or image file path."""
         path = Path(path)
         if path.is_file():
@@ -74,10 +77,13 @@ class Experiment:
             position_name=spec.position_name,
             basename=spec.basename,
             channel_name=spec.channel_name,
+            physical_size_z=spec.physical_size_z,
+            physical_size_y=spec.physical_size_y,
+            physical_size_x=spec.physical_size_x,
         )
 
     @classmethod
-    def from_image_path(cls, path: str | Path) -> Experiment:
+    def from_image_path(cls, path: str | Path) -> ImagedData:
         """Load a single TIFF/NPY/NPZ file outside a full experiment tree."""
         path = Path(path)
         image = io.load_image(path)
@@ -99,6 +105,9 @@ class Experiment:
             position_name=ctx.position_name,
             basename=ctx.basename,
             channel_name=ctx.channel_name,
+            physical_size_z=ctx.physical_size_z,
+            physical_size_y=ctx.physical_size_y,
+            physical_size_x=ctx.physical_size_x,
         )
 
     @classmethod
@@ -109,15 +118,15 @@ class Experiment:
         size_t: int | None = None,
         size_z: int | None = None,
         title: str = "",
-    ) -> Experiment:
-        """Wrap an in-memory array as an experiment (no filesystem)."""
+    ) -> ImagedData:
+        """Wrap an in-memory array (no filesystem)."""
         image = np.asarray(image)
         layout = tools.layout_from_metadata(image.shape, size_t, size_z)
         return cls(image=image, layout=layout, title=title or "array")
 
 
 class SegmentationResult:
-    """Mutable label mask edited by the GUI; holds the live ``uint32`` volume."""
+    """Label mask volume; editable in 2D segmentation, overlay-only in 3D."""
 
     def __init__(
         self,
@@ -130,14 +139,14 @@ class SegmentationResult:
         self.dirty = False
 
     @classmethod
-    def empty_like(cls, experiment: Experiment) -> SegmentationResult:
+    def empty_like(cls, imaged: ImagedData) -> SegmentationResult:
         return cls(
-            io.empty_mask_like(experiment.image),
-            save_path=experiment.mask_path,
+            io.empty_mask_like(imaged.image),
+            save_path=imaged.mask_path,
         )
 
     @classmethod
-    def from_path(cls, path: str | Path, *, like: Experiment) -> SegmentationResult:
+    def from_path(cls, path: str | Path, *, like: ImagedData) -> SegmentationResult:
         path = Path(path)
         mask = io.load_mask(path)
         if mask.shape != like.image.shape:
@@ -157,15 +166,15 @@ class SegmentationResult:
         return dest
 
 
-def default_segmentation(experiment: Experiment) -> SegmentationResult:
+def default_segmentation(imaged: ImagedData) -> SegmentationResult:
     """Return an on-disk mask when present, otherwise an empty mask."""
-    if experiment.mask_path is not None and experiment.mask_path.is_file():
+    if imaged.mask_path is not None and imaged.mask_path.is_file():
         try:
-            return SegmentationResult.from_path(experiment.mask_path, like=experiment)
+            return SegmentationResult.from_path(imaged.mask_path, like=imaged)
         except ValueError:
             pass
-    return SegmentationResult.empty_like(experiment)
+    return SegmentationResult.empty_like(imaged)
 
 
-# User-facing alias from the requested API name.
-ExperimentData = Experiment
+Experiment = ImagedData
+ExperimentData = ImagedData

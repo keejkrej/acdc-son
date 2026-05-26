@@ -48,7 +48,7 @@ class SegmentationPresenter:
         self._view.show()
 
     def open(self, experiment, result) -> None:
-        """Load programmatic ``Experiment`` + ``SegmentationResult`` into the viewer."""
+        """Load programmatic ``ImagedData`` + ``SegmentationResult`` into the viewer."""
         self._model.open(experiment, result)
         self._view.reset_label_visibility()
         self._selected_label_ids = []
@@ -174,7 +174,8 @@ class SegmentationPresenter:
         self._refresh_view()
 
     def _on_label_visibility_changed(self) -> None:
-        self._refresh_mask_only()
+        self._view.refresh_label_visibility()
+        self._refresh_selection()
 
     def _on_stroke_finished(self) -> None:
         self._model.end_stroke()
@@ -247,7 +248,7 @@ class SegmentationPresenter:
         z_max = max(0, layout.size_z - 1)
         self._view.refresh_display(
             self._model.current_image_slice(),
-            self._display_mask(),
+            self._model.current_mask_slice(),
         )
         self._refresh_selection()
         self._view.update_navigation_indices(
@@ -266,5 +267,6 @@ class SegmentationPresenter:
     def _refresh_mask_only(self) -> None:
         if not self._model.has_data:
             return
-        self._view.refresh_mask(self._display_mask())
+        self._view.refresh_mask(self._model.current_mask_slice())
+        self._view.refresh_label_visibility()
         self._refresh_selection()

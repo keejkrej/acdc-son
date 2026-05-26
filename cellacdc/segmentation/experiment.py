@@ -25,6 +25,9 @@ class PositionLoadSpec:
     mask_path: Path
     size_t: int | None
     size_z: int | None
+    physical_size_z: float = 1.0
+    physical_size_y: float = 1.0
+    physical_size_x: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,9 @@ class ImageFileLoadContext:
     position_name: str | None
     basename: str | None
     channel_name: str | None
+    physical_size_z: float = 1.0
+    physical_size_y: float = 1.0
+    physical_size_x: float = 1.0
 
 
 def _listdir_names(path: Path) -> list[str]:
@@ -193,6 +199,18 @@ def load_metadata_layout(images_path: Path) -> tuple[int | None, int | None]:
     return size_t, size_z
 
 
+def load_metadata_voxel_sizes(images_path: Path) -> tuple[float, float, float]:
+    """Read ``PhysicalSizeZ/Y/X`` from metadata.csv (Cell-ACDC convention)."""
+    metadata_path = _metadata_csv_path(Path(images_path))
+    if metadata_path is None:
+        return 1.0, 1.0, 1.0
+    metadata = io.load_metadata_csv(metadata_path)
+    dz = _parse_float(metadata.get("PhysicalSizeZ")) or 1.0
+    dy = _parse_float(metadata.get("PhysicalSizeY")) or 1.0
+    dx = _parse_float(metadata.get("PhysicalSizeX")) or 1.0
+    return dz, dy, dx
+
+
 def infer_image_file_context(image_path: Path) -> ImageFileLoadContext:
     """Infer layout metadata and mask path from ``metadata.csv`` in the same folder."""
     image_path = Path(image_path)
@@ -205,6 +223,7 @@ def infer_image_file_context(image_path: Path) -> ImageFileLoadContext:
     mask_path = io.segm_path_for_image(image_path)
     images_path: Path | None = None
     position_name: str | None = None
+    physical_size_z, physical_size_y, physical_size_x = load_metadata_voxel_sizes(folder)
 
     if metadata_path is not None:
         metadata = io.load_metadata_csv(metadata_path)
@@ -224,6 +243,9 @@ def infer_image_file_context(image_path: Path) -> ImageFileLoadContext:
         position_name=position_name,
         basename=basename,
         channel_name=channel_name,
+        physical_size_z=physical_size_z,
+        physical_size_y=physical_size_y,
+        physical_size_x=physical_size_x,
     )
 
 
@@ -232,6 +254,15 @@ def _parse_int(value: str | None) -> int | None:
         return None
     try:
         return int(float(value))
+    except ValueError:
+        return None
+
+
+def _parse_float(value: str | None) -> float | None:
+    if value is None or value.strip() == "":
+        return None
+    try:
+        return float(value)
     except ValueError:
         return None
 
@@ -248,6 +279,7 @@ def build_load_spec(images_path: Path, channel_name: str) -> PositionLoadSpec:
             f'No image file for channel "{channel_name}" in {images_path}'
         )
     size_t, size_z = load_metadata_layout(images_path)
+    physical_size_z, physical_size_y, physical_size_x = load_metadata_voxel_sizes(images_path)
     return PositionLoadSpec(
         images_path=images_path,
         position_name=position_name_from_images_path(images_path),
@@ -257,6 +289,9 @@ def build_load_spec(images_path: Path, channel_name: str) -> PositionLoadSpec:
         mask_path=segm_file_path(images_path, basename),
         size_t=size_t,
         size_z=size_z,
+        physical_size_z=physical_size_z,
+        physical_size_y=physical_size_y,
+        physical_size_x=physical_size_x,
     )
 
 

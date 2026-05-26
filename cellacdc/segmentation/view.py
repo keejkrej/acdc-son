@@ -7,7 +7,7 @@ import pyqtgraph as pg
 from pyqtgraph import Point
 from pyqtgraph import functions as fn
 from qtpy.QtCore import QEvent, Qt, Signal
-from qtpy.QtGui import QActionGroup, QIcon
+from qtpy.QtGui import QActionGroup
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QAction,
@@ -22,7 +22,6 @@ from qtpy.QtWidgets import (
     QListWidgetItem,
     QSlider,
     QSpinBox,
-    QStyle,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -30,6 +29,7 @@ from qtpy.QtWidgets import (
 
 from .lut import ImageLutBar, SegmentationLutBar
 from . import tools
+from cellacdc.icons import LucideIcon, lucide_qicon
 
 
 class ImageCanvas(QWidget):
@@ -56,15 +56,14 @@ class ImageCanvas(QWidget):
         self._image_item = pg.ImageItem()
         self._mask_item = pg.ImageItem()
         self._contour_item = pg.ImageItem()
+        self._contour_labels: np.ndarray | None = None
         self._plot.addItem(self._image_item)
         self._plot.addItem(self._mask_item)
         self._plot.addItem(self._contour_item)
         self._mask_item.setZValue(10)
         self._contour_item.setZValue(11)
-        self._contour_labels: np.ndarray | None = None
         self._image_lut = ImageLutBar(self._image_item)
         self._seg_lut = SegmentationLutBar(self._mask_item)
-        self._seg_lut.gradient.sigGradientChanged.connect(self._on_seg_lut_changed)
         self._layout.addItem(self._image_lut, row=0, col=0)
         self._layout.addItem(self._seg_lut, row=0, col=2)
         self._tool = "hand"
@@ -88,6 +87,9 @@ class ImageCanvas(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self._layout.setFocusPolicy(Qt.StrongFocus)
         self._layout.installEventFilter(self)
+        self._seg_lut.gradient.sigGradientChanged.connect(self._on_seg_lut_changed)
+        self._source_labels: np.ndarray | None = None
+        self._hidden_label_ids: set[int] = set()
 
     def set_image(self, gray: np.ndarray) -> None:
         shape_changed = (
@@ -99,29 +101,50 @@ class ImageCanvas(QWidget):
             self._image_lut.imageChanged(autoLevel=True, autoRange=True)
 
     def set_mask_labels(self, labels: np.ndarray) -> None:
+        self._source_labels = labels
+        self._render_mask_labels(upload=True)
+
+    def set_hidden_labels(self, hidden_ids: set[int]) -> None:
+        """Toggle label visibility via LUT alpha (mask stays indexed by raw IDs)."""
+        self._hidden_label_ids = set(hidden_ids)
+        self._render_mask_labels(upload=False)
+
+    def _render_mask_labels(self, *, upload: bool) -> None:
+        labels = self._source_labels
+        if labels is None:
+            return
         max_label = int(labels.max(initial=0))
         self._seg_lut.ensure_lut_size(max_label + 256)
         lut_size = self._seg_lut.lut_size
+
         current = self._mask_item.image
-        if (
-            current is not None
-            and current.shape == labels.shape
-            and np.may_share_memory(current, labels)
-        ):
-            self._mask_item._renderRequired = True
-            self._mask_item.update()
-            self._update_contours(labels)
-            return
-        self._mask_item.setImage(
-            labels,
-            autoLevels=False,
-            levels=(0, lut_size - 1),
-        )
-        self._update_contours(labels)
+        if upload or current is None or current.shape != labels.shape:
+            self._mask_item.setImage(
+                labels,
+                autoLevels=False,
+                levels=(0, lut_size - 1),
+            )
+        self._apply_mask_lut()
+        self._update_contours(self._labels_for_contours())
+
+    def _apply_mask_lut(self) -> None:
+        from cellacdc.segmentation.lut import lut_with_hidden_labels
+
+        lut = lut_with_hidden_labels(self._seg_lut.current_lut(), self._hidden_label_ids)
+        self._mask_item.setLookupTable(lut)
+
+    def _labels_for_contours(self) -> np.ndarray:
+        labels = self._source_labels
+        if labels is None:
+            return np.array([], dtype=np.uint32)
+        if not self._hidden_label_ids:
+            return labels
+        return tools.apply_label_visibility(labels, self._hidden_label_ids)
 
     def _on_seg_lut_changed(self) -> None:
-        if self._contour_labels is not None:
-            self._update_contours(self._contour_labels)
+        self._apply_mask_lut()
+        if self._source_labels is not None:
+            self._update_contours(self._labels_for_contours())
 
     def _update_contours(self, labels: np.ndarray) -> None:
         self._contour_labels = labels
@@ -140,6 +163,8 @@ class ImageCanvas(QWidget):
         self._mask_item.clear()
         self._contour_item.clear()
         self._contour_labels = None
+        self._source_labels = None
+        self._hidden_label_ids = set()
         self._clear_marquee()
         self._clear_selection_items()
 
@@ -561,66 +586,61 @@ class SegmentationView(QMainWindow):
         self._canvas.set_tool("hand")
         self._update_options_bar("hand")
 
-    def _std_icon(self, pixmap: QStyle.StandardPixmap) -> QIcon:
-        return self.style().standardIcon(pixmap)
-
     def _build_actions(self) -> None:
-        sp = QStyle.StandardPixmap
-
         self._open_folder_act = QAction("Open folder…", self)
-        self._open_folder_act.setIcon(self._std_icon(sp.SP_DirOpenIcon))
+        self._open_folder_act.setIcon(lucide_qicon(LucideIcon.FOLDER_OPEN))
         self._open_folder_act.setShortcut("Ctrl+O")
         self._open_folder_act.setToolTip("Open Cell-ACDC experiment folder")
         self._open_folder_act.triggered.connect(self.open_folder_requested.emit)
 
         self._open_file_act = QAction("Open image file…", self)
-        self._open_file_act.setIcon(self._std_icon(sp.SP_DialogOpenButton))
+        self._open_file_act.setIcon(lucide_qicon(LucideIcon.FILE_IMAGE))
         self._open_file_act.setToolTip("Open a single image file")
         self._open_file_act.triggered.connect(self.open_image_file_requested.emit)
 
         self._save_act = QAction("Save mask", self)
-        self._save_act.setIcon(self._std_icon(sp.SP_DialogSaveButton))
+        self._save_act.setIcon(lucide_qicon(LucideIcon.SAVE))
         self._save_act.setShortcut("Ctrl+S")
         self._save_act.triggered.connect(self.save_requested.emit)
 
         self._save_as_act = QAction("Save mask as…", self)
-        self._save_as_act.setIcon(self._std_icon(sp.SP_DialogSaveAllButton))
+        self._save_as_act.setIcon(lucide_qicon(LucideIcon.SAVE_AS))
         self._save_as_act.setShortcut("Ctrl+Shift+S")
         self._save_as_act.triggered.connect(self.save_as_requested.emit)
 
         self._undo_act = QAction("Undo", self)
-        self._undo_act.setIcon(self._std_icon(sp.SP_ArrowBack))
+        self._undo_act.setIcon(lucide_qicon(LucideIcon.UNDO))
         self._undo_act.setShortcut("Ctrl+Z")
         self._undo_act.triggered.connect(self.undo_requested.emit)
 
         self._redo_act = QAction("Redo", self)
-        self._redo_act.setIcon(self._std_icon(sp.SP_ArrowForward))
+        self._redo_act.setIcon(lucide_qicon(LucideIcon.REDO))
         self._redo_act.setShortcut("Ctrl+Y")
         self._redo_act.triggered.connect(self.redo_requested.emit)
 
         self._hand_act = QAction("Hand", self)
-        self._hand_act.setIcon(self._std_icon(sp.SP_FileDialogContentsView))
+        self._hand_act.setIcon(lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
         self._hand_act.setShortcut("H")
         self._hand_act.setToolTip("Hand — pan the canvas (H)")
         self._hand_act.triggered.connect(lambda: self._on_tool_action("hand"))
 
         self._move_act = QAction("Move", self)
-        self._move_act.setIcon(self._std_icon(sp.SP_ArrowUp))
+        self._move_act.setIcon(lucide_qicon(LucideIcon.MOVE))
         self._move_act.setCheckable(True)
         self._move_act.setShortcut("V")
         self._move_act.setToolTip("Move — click or drag to select labels (V)")
         self._move_act.triggered.connect(lambda: self._on_tool_action("move"))
 
         self._brush_act = QAction("Brush", self)
-        self._brush_act.setIcon(self._std_icon(sp.SP_DialogApplyButton))
+        self._brush_act.setIcon(lucide_qicon(LucideIcon.BRUSH))
         self._brush_act.setCheckable(True)
         self._brush_act.setShortcut("B")
         self._brush_act.setToolTip("Brush (B)")
         self._brush_act.triggered.connect(lambda: self._on_tool_action("brush"))
 
         self._eraser_act = QAction("Eraser", self)
-        self._eraser_act.setIcon(self._std_icon(sp.SP_LineEditClearButton))
+        self._eraser_act.setIcon(lucide_qicon(LucideIcon.ERASER))
         self._eraser_act.setCheckable(True)
         self._eraser_act.setShortcut("E")
         self._eraser_act.setToolTip("Eraser (E)")
@@ -823,9 +843,13 @@ class SegmentationView(QMainWindow):
     ) -> None:
         self._canvas.set_image(image_slice)
         self._canvas.set_mask_labels(mask_slice)
+        self._canvas.set_hidden_labels(self.get_hidden_label_ids())
 
     def refresh_mask(self, mask_slice: np.ndarray) -> None:
         self._canvas.set_mask_labels(mask_slice)
+
+    def refresh_label_visibility(self) -> None:
+        self._canvas.set_hidden_labels(self.get_hidden_label_ids())
 
     @property
     def canvas(self) -> ImageCanvas:

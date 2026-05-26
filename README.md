@@ -11,6 +11,7 @@ Minimal **manual segmentation** GUI for microscopy, rewritten from [Cell_ACDC](h
 - Mask overlay toggle
 - Undo / redo
 - Save masks as `{basename}segm.npz` with key `arr_0` (`uint32`), compatible with Cell-ACDC
+- 3D volume viewer (`acdc-3d`) with vispy overlay, segmentation-style shell (hand tool, labels dock, frame transport)
 
 ## Opening data
 
@@ -27,69 +28,52 @@ Use **File → Open image file** for loose TIFF/NPY/NPZ outside the Cell-ACDC la
 ## Requirements
 
 - Python 3.12 (pinned via `uv`)
-- qtpy + PySide6 + pyqtgraph
+- qtpy + PySide6 + pyqtgraph + vispy
 
 ## Install and run
 
 ```bash
 uv sync
-uv run acdc-seg
+uv run acdc-seg    # 2D manual segmentation
+uv run acdc-3d     # 3D volume viewer
 ```
 
 ## Programmatic API
 
-Load data and open the viewer without tying edits to filesystem I/O:
+Load data and open the 2D segmentation or 3D volume viewer without mandatory filesystem I/O:
 
 ```python
 import cellacdc
 
-data = cellacdc.ExperimentData.from_path("/path/to/experiment", channel="phase")
+data = cellacdc.ImagedData.from_path("/path/to/experiment", channel="phase")
 result = cellacdc.SegmentationResult.empty_like(data)
 
+# 2D manual segmentation
 viewer, result = cellacdc.imshow(data, result=result)
 cellacdc.run()
 
-# Edits are written directly into result.mask
-assert result.dirty
-result.save("/optional/path/segm.npz")
-```
-
-Explicit viewer handle (same code path as ``imshow``):
-
-```python
-viewer = cellacdc.SegmentationViewer()
-result = viewer.open(data, result=result)
-viewer.show()
+# 3D volume overlay (read-only)
+viewer3d, result = cellacdc.imshow3d(data, result=result)
 cellacdc.run()
 ```
 
-- **`Experiment`** (`ExperimentData` alias) — read-only image volume + layout metadata
-- **`SegmentationResult`** — mutable `uint32` mask the GUI edits in place
-- **`SegmentationViewer`** — core viewer object (model + view + presenter)
-- **`imshow(data, result=..., viewer=..., show=True)`** — convenience wrapper; returns `(viewer, result)`
-- **`run()`** — runs the Qt event loop (also used by `uv run acdc-seg`)
+- **`ImagedData`** (`Experiment` / `ExperimentData` aliases) — read-only image volume + layout metadata
+- **`SegmentationResult`** — label mask (`uint32`); edited in 2D, overlaid in 3D
+- **`SegmentationViewer`** / **`VolumeViewer`** — core viewer objects
+- **`imshow` / `imshow3d`** — convenience wrappers returning `(viewer, result)`
+- **`run()`** — Qt event loop (`uv run acdc-seg` or `uv run acdc-3d`)
 
-Fully in-memory workflow:
-
-```python
-import numpy as np
-import cellacdc
-
-image = np.zeros((128, 128), dtype=np.uint16)
-data = cellacdc.Experiment.from_arrays(image, title="demo")
-result = cellacdc.SegmentationResult.empty_like(data)
-cellacdc.imshow(data, result=result)
-cellacdc.run()
-```
+3D viewer: dual LUT bars (image grey, labels viridis) and an **Image ↔ Segmentation** blend slider; vispy default volume rendering only (no exposed render controls).
 
 ## Layout
 
 ```
 cellacdc/
   __init__.py              # Public API
-  data.py                  # Experiment + SegmentationResult types
-  viewer.py                # SegmentationViewer, imshow, run
-  __main__.py              # CLI entry
+  data.py                  # ImagedData + SegmentationResult
+  viewer.py                # 2D SegmentationViewer, imshow, run
+  volume/                  # 3D VolumeViewer, imshow3d (vispy)
+  __main__.py              # acdc-seg CLI
   segmentation/
     model.py               # Editing state (binds to SegmentationResult)
     view.py                # Qt / pyqtgraph UI

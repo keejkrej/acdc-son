@@ -9,6 +9,17 @@ _LABEL_ALPHA = int(round(0.45 * 255))
 _DEFAULT_LUT_SIZE = 4096
 
 
+def lut_with_hidden_labels(lut: np.ndarray, hidden_ids: set[int]) -> np.ndarray:
+    """Return a copy of ``lut`` with ``hidden_ids`` entries fully transparent."""
+    if not hidden_ids:
+        return lut
+    out = np.array(lut, copy=True)
+    for label_id in hidden_ids:
+        if 0 <= label_id < len(out):
+            out[label_id] = (0, 0, 0, 0)
+    return out
+
+
 class BaseLutBar(pg.HistogramLUTItem):
     """Vertical LUT bar with histogram hidden (gradient only)."""
 

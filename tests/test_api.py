@@ -9,6 +9,7 @@ import numpy as np
 from cellacdc.data import (
     Experiment,
     ExperimentData,
+    ImagedData,
     SegmentationResult,
     default_segmentation,
 )
@@ -16,21 +17,22 @@ from cellacdc.segmentation import io, tools
 from cellacdc.segmentation.model import SegmentationModel
 
 
-def test_experiment_from_arrays() -> None:
+def test_imaged_from_arrays() -> None:
     image = np.zeros((16, 16), dtype=np.uint8)
-    exp = Experiment.from_arrays(image, title="demo")
-    assert exp.image is image
-    assert exp.layout.size_y == 16
-    assert exp.title == "demo"
+    imaged = ImagedData.from_arrays(image, title="demo")
+    assert imaged.image is image
+    assert imaged.layout.size_y == 16
+    assert imaged.title == "demo"
 
 
 def test_experiment_data_alias() -> None:
-    assert ExperimentData is Experiment
+    assert ExperimentData is ImagedData
+    assert Experiment is ImagedData
 
 
 def test_segmentation_result_empty_and_save(tmp_path: Path) -> None:
-    exp = Experiment.from_arrays(np.zeros((8, 8), dtype=np.uint8))
-    result = SegmentationResult.empty_like(exp)
+    imaged = ImagedData.from_arrays(np.zeros((8, 8), dtype=np.uint8))
+    result = SegmentationResult.empty_like(imaged)
     assert result.mask.shape == (8, 8)
     assert not result.dirty
     result.mask[3, 3] = 2
@@ -48,22 +50,22 @@ def test_default_segmentation_loads_existing_mask(tmp_path: Path) -> None:
     mask = np.zeros((8, 8), dtype=np.uint32)
     mask[1, 1] = 5
     io.save_mask(mask_path, mask)
-    exp = Experiment.from_arrays(image, title="x")
-    exp = Experiment(
-        image=exp.image,
-        layout=exp.layout,
+    imaged = ImagedData.from_arrays(image, title="x")
+    imaged = ImagedData(
+        image=imaged.image,
+        layout=imaged.layout,
         mask_path=mask_path,
     )
-    result = default_segmentation(exp)
+    result = default_segmentation(imaged)
     assert result.mask[1, 1] == 5
 
 
 def test_model_open_edits_result_in_place() -> None:
     image = np.ones((20, 20), dtype=np.uint8)
-    exp = Experiment.from_arrays(image)
-    result = SegmentationResult.empty_like(exp)
+    imaged = ImagedData.from_arrays(image)
+    result = SegmentationResult.empty_like(imaged)
     model = SegmentationModel()
-    model.open(exp, result)
+    model.open(imaged, result)
     assert model.has_data
     assert model.mask is result.mask
     model.tool = "brush"
@@ -75,10 +77,10 @@ def test_model_open_edits_result_in_place() -> None:
 
 
 def test_model_save_delegates_to_result(tmp_path: Path) -> None:
-    exp = Experiment.from_arrays(np.zeros((4, 4), dtype=np.uint8))
-    result = SegmentationResult.empty_like(exp)
+    imaged = ImagedData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
+    result = SegmentationResult.empty_like(imaged)
     model = SegmentationModel()
-    model.open(exp, result)
+    model.open(imaged, result)
     result.mask[0, 0] = 7
     dest = tmp_path / "out.npz"
     model.save_mask(dest)
@@ -86,7 +88,7 @@ def test_model_save_delegates_to_result(tmp_path: Path) -> None:
     assert not result.dirty
 
 
-def test_experiment_from_path_single_position(tmp_path: Path) -> None:
+def test_imaged_from_path_single_position(tmp_path: Path) -> None:
     images = tmp_path / "Position_1" / "Images"
     images.mkdir(parents=True)
     import tifffile
@@ -97,16 +99,16 @@ def test_experiment_from_path_single_position(tmp_path: Path) -> None:
         "channel_0_name,phase\n",
         encoding="utf-8",
     )
-    exp = Experiment.from_path(tmp_path / "Position_1", channel="phase")
-    assert exp.image_path == images / "demo_s01_phase.tif"
-    assert exp.mask_path == images / "demo_s01_segm.npz"
-    assert exp.layout.size_t == 1
+    imaged = ImagedData.from_path(tmp_path / "Position_1", channel="phase")
+    assert imaged.image_path == images / "demo_s01_phase.tif"
+    assert imaged.mask_path == images / "demo_s01_segm.npz"
+    assert imaged.layout.size_t == 1
 
 
 def test_apply_brush_stroke_on_bound_result() -> None:
-    exp = Experiment.from_arrays(np.zeros((12, 12), dtype=np.uint8))
-    result = SegmentationResult.empty_like(exp)
-    sl = tools.extract_slice(result.mask, exp.layout, 0, 0)
+    imaged = ImagedData.from_arrays(np.zeros((12, 12), dtype=np.uint8))
+    result = SegmentationResult.empty_like(imaged)
+    sl = tools.extract_slice(result.mask, imaged.layout, 0, 0)
     tools.apply_brush(sl, 6, 6, radius=2, label=3)
     assert result.mask[6, 6] == 3
 
@@ -114,10 +116,10 @@ def test_apply_brush_stroke_on_bound_result() -> None:
 def test_segmentation_viewer_open_binds_result() -> None:
     from cellacdc.viewer import SegmentationViewer
 
-    exp = Experiment.from_arrays(np.zeros((6, 6), dtype=np.uint8))
-    result = SegmentationResult.empty_like(exp)
+    imaged = ImagedData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    result = SegmentationResult.empty_like(imaged)
     viewer = SegmentationViewer()
-    opened = viewer.open(exp, result=result)
+    opened = viewer.open(imaged, result=result)
     assert opened is result
     assert viewer.model.mask is result.mask
     assert viewer.result is result
@@ -126,9 +128,25 @@ def test_segmentation_viewer_open_binds_result() -> None:
 def test_imshow_returns_viewer_and_result() -> None:
     from cellacdc.viewer import imshow
 
-    exp = Experiment.from_arrays(np.zeros((6, 6), dtype=np.uint8))
-    result = SegmentationResult.empty_like(exp)
-    viewer, opened = imshow(exp, result=result, show=False)
+    imaged = ImagedData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    result = SegmentationResult.empty_like(imaged)
+    viewer, opened = imshow(imaged, result=result, show=False)
     assert viewer.model.has_data
     assert opened is result
     assert opened.mask is result.mask
+
+
+def test_volume_viewer_open_without_show() -> None:
+    from cellacdc.volume import VolumeViewer
+
+    image = np.zeros((4, 8, 8), dtype=np.uint16)
+    image[:, 3:5, 3:5] = 500
+    imaged = ImagedData.from_arrays(image)
+    result = SegmentationResult.empty_like(imaged)
+    result.mask[:, 3:5, 3:5] = 1
+    viewer = VolumeViewer()
+    opened = viewer.open(imaged, result=result)
+    assert opened is result
+    assert viewer.imaged is imaged
+    assert viewer.model.has_data
+    assert viewer.window.get_hidden_label_ids() == set()
