@@ -9,7 +9,7 @@ import pyqtgraph as pg
 from qtpy.QtCore import Qt, QTimer
 from qtpy.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
-from acdc.blend import display_opacities
+from acdc.utils.blend import display_opacities
 from acdc.volume.cmaps import label_lut_to_vispy, pg_colormap_to_vispy
 from acdc.volume.gl_blend import volume_gl_state
 from acdc.volume.lut import VolumeImageLutBar, VolumeLabelLutBar

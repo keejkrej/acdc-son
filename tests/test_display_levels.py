@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from acdc.display_levels import autoscale_levels, scale_to_unit, stack_autoscale_levels
-from acdc.segment import tools
+from acdc.utils.display_levels import autoscale_levels, scale_to_unit, stack_autoscale_levels
+from acdc.core import stack
 
 
 def test_autoscale_levels_uses_min_max() -> None:
@@ -23,14 +23,14 @@ def test_autoscale_levels_handles_flat_image() -> None:
 
 
 def test_stack_autoscale_uses_global_min_max() -> None:
-    stack = np.zeros((8, 8, 8), dtype=np.uint16)
-    stack[2, 1:7, 1:7] = 120
-    stack[4, 4, 4] = 60000
-    layout = tools.infer_layout(stack.shape)
-    lo, hi = stack_autoscale_levels(stack, layout)
+    volume = np.zeros((8, 8, 8), dtype=np.uint16)
+    volume[2, 1:7, 1:7] = 120
+    volume[4, 4, 4] = 60000
+    stack_shape = stack.infer_shape(volume.shape)
+    lo, hi = stack_autoscale_levels(volume, stack_shape)
     assert lo == 0.0
     assert hi == 60000.0
-    scaled = scale_to_unit(stack[2, 1:7, 1:7], lo, hi)
+    scaled = scale_to_unit(volume[2, 1:7, 1:7], lo, hi)
     assert scaled[0, 0] == 120 / 60000
 
 

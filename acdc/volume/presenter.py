@@ -7,9 +7,9 @@ from pathlib import Path
 
 from qtpy.QtWidgets import QMessageBox
 
-from acdc.channels import channel_display_name
-from acdc.data import ImageData, SegmentationResult
-from acdc.segment import experiment
+from acdc.utils.channels import channel_display_name
+from acdc.core.data import AcdcData, AcdcResult
+from acdc.core import experiment
 from acdc.volume.model import VolumeModel
 from acdc.volume.prepare import (
     label_volume_for_vispy,
@@ -43,11 +43,11 @@ class VolumePresenter:
 
     def open(
         self,
-        images: Sequence[ImageData],
-        result: SegmentationResult | None = None,
+        images: Sequence[AcdcData],
+        result: AcdcResult | None = None,
         *,
         t_index: int = 0,
-    ) -> SegmentationResult:
+    ) -> AcdcResult:
         mask = self._model.bind(images, result)
         self._model.t_index = t_index
         self._view.reset_label_visibility()
@@ -116,7 +116,7 @@ class VolumePresenter:
             return
 
         try:
-            images = ImageData.from_path_channels(images_path, channels)
+            images = AcdcData.from_experiment(images_path, channels=channels)
             self.open(images)
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
@@ -126,7 +126,7 @@ class VolumePresenter:
         if not path:
             return
         try:
-            imaged = ImageData.from_image_path(Path(path))
+            imaged = AcdcData.from_path(Path(path))
             self.open([imaged])
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
@@ -144,8 +144,8 @@ class VolumePresenter:
     def _sync_controls(self) -> None:
         if not self._model.has_data or self._model.primary is None:
             return
-        layout = self._model.primary.layout
-        t_max = max(0, layout.size_t - 1)
+        stack_shape = self._model.primary.stack_shape
+        t_max = max(0, stack_shape.size_t - 1)
         self._view.set_navigation(self._model.t_index, t_max, 0, 0)
         self._view.set_label_list(
             self._model.all_label_ids(),
@@ -166,7 +166,7 @@ class VolumePresenter:
             image_vol, image_clim = normalize_image_stack_volume(
                 image_raw,
                 channel.image,
-                channel.layout,
+                channel.stack_shape,
                 stack_levels=self._model.channel_stack_levels[index],
                 display_clim=self._model.channel_display_clim[index],
             )
@@ -174,7 +174,7 @@ class VolumePresenter:
             clims.append(image_clim)
             labels.append(channel_display_name(channel, index))
 
-        label_raw = mask_volume_zyx(result, reference.layout, t_index=self._model.t_index)
+        label_raw = mask_volume_zyx(result, reference.stack_shape, t_index=self._model.t_index)
         label_vol, lut_size = label_volume_for_vispy(label_raw)
         max_from_ids = max(self._model.all_label_ids(), default=0)
         lut_size = max(lut_size, max_from_ids + 1, 2)
@@ -193,8 +193,8 @@ class VolumePresenter:
         self._view.canvas.set_channel_weights(list(self._model.channel_weights))
         self._view.canvas.set_image_seg_blend(self._model.image_seg_blend)
         self._view.refresh_label_visibility()
-        layout = reference.layout
-        t_max = max(0, layout.size_t - 1)
+        stack_shape = reference.stack_shape
+        t_max = max(0, stack_shape.size_t - 1)
         self._view.update_navigation_indices(self._model.t_index, t_max, 0, 0)
 
     def _refresh(self) -> None:

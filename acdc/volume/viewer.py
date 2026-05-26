@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 from weakref import WeakSet
 
 from acdc.app import exec_until_closed, get_qapp
-from acdc.data import ImageData, SegmentationResult, coalesce_images
+from acdc.core.data import AcdcData, AcdcResult, coalesce_images
 
 if TYPE_CHECKING:
     from acdc.volume.model import VolumeModel
@@ -18,7 +18,7 @@ _current_volume_viewer: VolumeViewer | None = None
 
 
 class VolumeViewer:
-    """Read-only 3D viewer for ``ImageData`` with ``SegmentationResult`` overlay."""
+    """Read-only 3D viewer for ``AcdcData`` with ``AcdcResult`` overlay."""
 
     _instances: ClassVar[WeakSet[VolumeViewer]] = WeakSet()
 
@@ -48,15 +48,15 @@ class VolumeViewer:
         return self._presenter
 
     @property
-    def result(self) -> SegmentationResult | None:
+    def result(self) -> AcdcResult | None:
         return self._model.result
 
     @property
-    def primary(self) -> ImageData | None:
+    def primary(self) -> AcdcData | None:
         return self._model.primary
 
     @property
-    def images(self) -> tuple[ImageData, ...]:
+    def images(self) -> tuple[AcdcData, ...]:
         return tuple(self._model.channels)
 
     @property
@@ -65,11 +65,11 @@ class VolumeViewer:
 
     def open(
         self,
-        images: Sequence[ImageData],
-        segmentation: SegmentationResult,
+        images: Sequence[AcdcData],
+        segmentation: AcdcResult,
         *,
         t_index: int = 0,
-    ) -> SegmentationResult:
+    ) -> AcdcResult:
         return self._presenter.open(images, segmentation, t_index=t_index)
 
     def show(self) -> None:
@@ -87,11 +87,11 @@ def current_volume_viewer() -> VolumeViewer | None:
 
 
 def run_volume(
-    images: Sequence[ImageData],
-    segmentation: SegmentationResult,
+    images: Sequence[AcdcData],
+    segmentation: AcdcResult,
     *,
     t_index: int = 0,
-) -> tuple[tuple[ImageData, ...], SegmentationResult]:
+) -> tuple[tuple[AcdcData, ...], AcdcResult]:
     """Open the 3D volume viewer; block until the window closes."""
     images = coalesce_images(images)
     viewer = VolumeViewer()

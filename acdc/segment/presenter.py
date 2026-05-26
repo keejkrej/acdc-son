@@ -7,12 +7,12 @@ from pathlib import Path
 
 from qtpy.QtWidgets import QMessageBox
 
-from acdc.data import ImageData, SegmentationResult, default_segmentation
-from acdc.channels import channel_display_name
+from acdc.core.data import AcdcData, AcdcResult, load_segmentation
+from acdc.utils.channels import channel_display_name
 
-from . import experiment
+from acdc.core import experiment
 from .model import SegmentationModel
-from .tools import apply_label_visibility
+from .editing import apply_label_visibility
 from .view import SegmentationView
 
 
@@ -56,10 +56,10 @@ class SegmentationPresenter:
 
     def open(
         self,
-        images: Sequence[ImageData],
-        result: SegmentationResult,
+        images: Sequence[AcdcData],
+        result: AcdcResult,
     ) -> None:
-        """Load programmatic ``ImageData`` channel(s) and ``SegmentationResult``."""
+        """Load programmatic ``AcdcData`` channel(s) and ``AcdcResult``."""
         self._model.open(images, result)
         self._view.reset_label_visibility()
         self._selected_label_ids = []
@@ -127,9 +127,11 @@ class SegmentationPresenter:
             return
 
         try:
-            images = ImageData.from_path_channels(images_path, channels)
-            result = default_segmentation(images[0])
+            images = AcdcData.from_experiment(images_path, channels=channels)
+            mask_path = experiment.mask_path(images_path)
+            result = load_segmentation(mask_path, like=images[0])
             self.open(images, result)
+            self._model.mask_path = mask_path
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
@@ -139,9 +141,12 @@ class SegmentationPresenter:
         if not path:
             return
         try:
-            imaged = ImageData.from_image_path(Path(path))
-            result = default_segmentation(imaged)
+            image_path = Path(path)
+            imaged = AcdcData.from_path(image_path)
+            mask_path = experiment.mask_path_for_image(image_path)
+            result = load_segmentation(mask_path, like=imaged)
             self.open([imaged], result)
+            self._model.mask_path = mask_path
         except Exception as exc:
             QMessageBox.critical(self._view, "Open failed", str(exc))
             return
@@ -249,18 +254,18 @@ class SegmentationPresenter:
         )
 
     def _sync_controls(self) -> None:
-        layout = self._model.layout
-        if layout is None:
+        stack_shape = self._model.stack_shape
+        if stack_shape is None:
             return
-        t_max = max(0, layout.size_t - 1)
-        z_max = max(0, layout.size_z - 1)
+        t_max = max(0, stack_shape.size_t - 1)
+        z_max = max(0, stack_shape.size_z - 1)
         self._view.set_navigation(self._model.t_index, t_max, self._model.z_index, z_max)
         self._view.set_paint_label_id(self._model.label_id)
         self._view.set_brush_size(self._model.brush_size)
         self._view.set_label_list(self._model.all_label_ids())
         label = self._model.status_label()
-        dirty = " *" if self._model.dirty else ""
-        self._view.set_status(f"{label}{dirty}")
+        unsaved = " *" if not self._model.saved else ""
+        self._view.set_status(f"{label}{unsaved}")
 
     def _display_mask(self):
         mask = self._model.current_mask_slice()
@@ -268,11 +273,11 @@ class SegmentationPresenter:
 
     def _refresh_slice(self) -> None:
         """Update the current T/Z slice only (frame slider hot path)."""
-        if not self._model.has_data or self._model.layout is None:
+        if not self._model.has_data or self._model.stack_shape is None:
             return
-        layout = self._model.layout
-        t_max = max(0, layout.size_t - 1)
-        z_max = max(0, layout.size_z - 1)
+        stack_shape = self._model.stack_shape
+        t_max = max(0, stack_shape.size_t - 1)
+        z_max = max(0, stack_shape.size_z - 1)
         labels = [
             channel_display_name(channel, index)
             for index, channel in enumerate(self._model.channels)

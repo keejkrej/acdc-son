@@ -17,9 +17,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from acdc.blend_controls import BlendControlBar
-from acdc.dialogs import pick_from_list, pick_many_from_list
-from acdc.icons import LucideIcon, lucide_qicon
+from acdc.ui.blend_controls import BlendControlBar
+from acdc.ui.dialogs import pick_from_list, pick_many_from_list
+from acdc.ui.icons import LucideIcon, install_icon_theme_watcher, themed_lucide_qicon
 from acdc.segment.view import LabelListPanel
 from acdc.volume.canvas import VolumeCanvas
 
@@ -137,19 +137,25 @@ class VolumeView(QMainWindow):
         self._build_labels_dock()
         self.statusBar().showMessage("Open a Cell-ACDC folder or image file to begin.")
         self._hand_act.setChecked(True)
+        install_icon_theme_watcher(self, self._refresh_action_icons)
+
+    def _refresh_action_icons(self) -> None:
+        self._open_folder_act.setIcon(themed_lucide_qicon(LucideIcon.FOLDER_OPEN))
+        self._open_file_act.setIcon(themed_lucide_qicon(LucideIcon.FILE_IMAGE))
+        self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
 
     def _build_actions(self) -> None:
         self._open_folder_act = QAction("Open folder…", self)
-        self._open_folder_act.setIcon(lucide_qicon(LucideIcon.FOLDER_OPEN))
+        self._open_folder_act.setIcon(themed_lucide_qicon(LucideIcon.FOLDER_OPEN))
         self._open_folder_act.setShortcut("Ctrl+O")
         self._open_folder_act.triggered.connect(self.open_folder_requested.emit)
 
         self._open_file_act = QAction("Open image file…", self)
-        self._open_file_act.setIcon(lucide_qicon(LucideIcon.FILE_IMAGE))
+        self._open_file_act.setIcon(themed_lucide_qicon(LucideIcon.FILE_IMAGE))
         self._open_file_act.triggered.connect(self.open_image_file_requested.emit)
 
         self._hand_act = QAction("Hand", self)
-        self._hand_act.setIcon(lucide_qicon(LucideIcon.HAND))
+        self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
         self._hand_act.setShortcut("H")
         self._hand_act.setToolTip("Hand — navigate the 3D view (H)")

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 from weakref import WeakSet
 
 from acdc.app import exec_until_closed, get_qapp
-from acdc.data import ImageData, SegmentationResult, coalesce_images
+from acdc.core.data import AcdcData, AcdcResult, coalesce_images
 
 if TYPE_CHECKING:
     from acdc.segment.model import SegmentationModel
@@ -31,8 +31,8 @@ class SegmentationViewer:
         self._model = SegmentationModel()
         self._view = SegmentationView()
         self._presenter = SegmentationPresenter(self._model, self._view)
-        self._result: SegmentationResult | None = None
-        self._images: tuple[ImageData, ...] = ()
+        self._result: AcdcResult | None = None
+        self._images: tuple[AcdcData, ...] = ()
         self._instances.add(self)
         if show:
             self.show()
@@ -50,18 +50,18 @@ class SegmentationViewer:
         return self._presenter
 
     @property
-    def result(self) -> SegmentationResult | None:
+    def result(self) -> AcdcResult | None:
         return self._result
 
     @property
-    def images(self) -> tuple[ImageData, ...]:
+    def images(self) -> tuple[AcdcData, ...]:
         return self._images
 
     def open(
         self,
-        images: Sequence[ImageData],
-        segmentation: SegmentationResult,
-    ) -> SegmentationResult:
+        images: Sequence[AcdcData],
+        segmentation: AcdcResult,
+    ) -> AcdcResult:
         """Bind ``images`` channel(s) and a live ``segmentation`` mask to this viewer."""
         image_list = coalesce_images(images)
         self._images = image_list
@@ -86,9 +86,9 @@ def current_viewer() -> SegmentationViewer | None:
 
 
 def run_segment(
-    images: Sequence[ImageData],
-    segmentation: SegmentationResult,
-) -> tuple[tuple[ImageData, ...], SegmentationResult]:
+    images: Sequence[AcdcData],
+    segmentation: AcdcResult,
+) -> tuple[tuple[AcdcData, ...], AcdcResult]:
     """Open the 2D segmentation editor; block until the window closes."""
     images = coalesce_images(images)
     viewer = SegmentationViewer()

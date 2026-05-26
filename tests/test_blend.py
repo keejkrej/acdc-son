@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from acdc.blend import display_opacities
+from acdc.utils.blend import display_opacities
 
 
 def test_display_opacities_scales_channels_and_seg() -> None:

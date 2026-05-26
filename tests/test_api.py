@@ -6,57 +6,56 @@ from pathlib import Path
 
 import numpy as np
 
-from acdc.data import (
-    ImageData,
-    SegmentationResult,
-    default_segmentation,
+from acdc.core.data import (
+    AcdcData,
+    AcdcResult,
+    load,
+    load_segmentation,
+    save_segmentation,
 )
-from acdc.segment import io, tools
+from acdc.core import io
+from acdc.core import stack
 from acdc.segment.model import SegmentationModel
 
 
 def test_imaged_from_arrays() -> None:
     image = np.zeros((16, 16), dtype=np.uint8)
-    imaged = ImageData.from_arrays(image, title="demo")
+    imaged = AcdcData.from_arrays(image, name="demo")
     assert imaged.image is image
-    assert imaged.layout.size_y == 16
-    assert imaged.title == "demo"
+    assert imaged.stack_shape.size_y == 16
+    assert imaged.name == "demo"
 
 
 def test_segmentation_result_empty_and_save(tmp_path: Path) -> None:
-    imaged = ImageData.from_arrays(np.zeros((8, 8), dtype=np.uint8))
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(np.zeros((8, 8), dtype=np.uint8))
+    result = AcdcResult.empty_like(imaged)
     assert result.mask.shape == (8, 8)
-    assert not result.dirty
     result.mask[3, 3] = 2
-    result.dirty = True
     out = tmp_path / "mask.npz"
-    result.save(out)
-    assert not result.dirty
+    save_segmentation(result, out)
     loaded = io.load_mask(out)
     assert loaded[3, 3] == 2
 
 
-def test_default_segmentation_loads_existing_mask(tmp_path: Path) -> None:
+def test_load_segmentation_reads_existing_mask(tmp_path: Path) -> None:
     image = np.zeros((8, 8), dtype=np.uint8)
+    image_path = tmp_path / "cell.tif"
     mask_path = tmp_path / "cellsegm.npz"
+    import tifffile
+
+    tifffile.imwrite(image_path, image)
     mask = np.zeros((8, 8), dtype=np.uint32)
     mask[1, 1] = 5
     io.save_mask(mask_path, mask)
-    imaged = ImageData.from_arrays(image, title="x")
-    imaged = ImageData(
-        image=imaged.image,
-        layout=imaged.layout,
-        mask_path=mask_path,
-    )
-    result = default_segmentation(imaged)
+    imaged = AcdcData.from_path(image_path)
+    result = load_segmentation(mask_path, like=imaged)
     assert result.mask[1, 1] == 5
 
 
 def test_model_open_edits_result_in_place() -> None:
     image = np.ones((20, 20), dtype=np.uint8)
-    imaged = ImageData.from_arrays(image)
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(image)
+    result = AcdcResult.empty_like(imaged)
     model = SegmentationModel()
     model.open([imaged], result)
     assert model.has_data
@@ -66,22 +65,22 @@ def test_model_open_edits_result_in_place() -> None:
     model.paint(5, 5)
     model.end_stroke()
     assert result.mask[5, 5] == model.label_id
-    assert result.dirty
+    assert not model.saved
 
 
 def test_model_save_delegates_to_result(tmp_path: Path) -> None:
-    imaged = ImageData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
+    result = AcdcResult.empty_like(imaged)
     model = SegmentationModel()
     model.open([imaged], result)
     result.mask[0, 0] = 7
     dest = tmp_path / "out.npz"
     model.save_mask(dest)
     assert io.load_mask(dest)[0, 0] == 7
-    assert not result.dirty
+    assert model.saved
 
 
-def test_imaged_from_path_single_position(tmp_path: Path) -> None:
+def test_imaged_from_experiment_single_position(tmp_path: Path) -> None:
     images = tmp_path / "Position_1" / "Images"
     images.mkdir(parents=True)
     import tifffile
@@ -92,25 +91,31 @@ def test_imaged_from_path_single_position(tmp_path: Path) -> None:
         "channel_0_name,phase\n",
         encoding="utf-8",
     )
-    imaged = ImageData.from_path(tmp_path / "Position_1", channel="phase")
-    assert imaged.image_path == images / "demo_s01_phase.tif"
-    assert imaged.mask_path == images / "demo_s01_segm.npz"
-    assert imaged.layout.size_t == 1
+    loaded = AcdcData.from_experiment(tmp_path / "Position_1", channel="phase")
+    imaged = loaded[0]
+    assert imaged.name == "Position_1 / phase"
+    assert imaged.stack_shape.size_t == 1
+    images, result = load(tmp_path / "Position_1", channel="phase")
+    assert images[0].name == imaged.name
+    assert images[0].image.shape == imaged.image.shape
+    assert result.mask.shape == imaged.image.shape
 
 
 def test_apply_brush_stroke_on_bound_result() -> None:
-    imaged = ImageData.from_arrays(np.zeros((12, 12), dtype=np.uint8))
-    result = SegmentationResult.empty_like(imaged)
-    sl = tools.extract_slice(result.mask, imaged.layout, 0, 0)
-    tools.apply_brush(sl, 6, 6, radius=2, label=3)
+    imaged = AcdcData.from_arrays(np.zeros((12, 12), dtype=np.uint8))
+    result = AcdcResult.empty_like(imaged)
+    sl = stack.extract_slice(result.mask, imaged.stack_shape, 0, 0)
+    from acdc.segment import editing
+
+    editing.apply_brush(sl, 6, 6, radius=2, label=3)
     assert result.mask[6, 6] == 3
 
 
 def test_segmentation_viewer_open_binds_result() -> None:
     from acdc.segment.viewer import SegmentationViewer
 
-    imaged = ImageData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    result = AcdcResult.empty_like(imaged)
     viewer = SegmentationViewer()
     opened = viewer.open([imaged], result)
     assert opened is result
@@ -123,8 +128,8 @@ def test_run_segment_returns_images_and_segmentation() -> None:
 
     from acdc.segment.viewer import current_viewer, run_segment
 
-    imaged = ImageData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    result = AcdcResult.empty_like(imaged)
 
     def close_window() -> None:
         viewer = current_viewer()
@@ -143,8 +148,8 @@ def test_run_volume_returns_images_and_segmentation() -> None:
     from acdc.volume.viewer import current_volume_viewer, run_volume
 
     image = np.zeros((4, 8, 8), dtype=np.uint16)
-    imaged = ImageData.from_arrays(image)
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(image)
+    result = AcdcResult.empty_like(imaged)
 
     def close_window() -> None:
         viewer = current_volume_viewer()
@@ -160,9 +165,9 @@ def test_run_volume_returns_images_and_segmentation() -> None:
 def test_volume_accepts_channel_list() -> None:
     from acdc.volume.viewer import VolumeViewer
 
-    primary = ImageData.from_arrays(np.zeros((4, 8, 8), dtype=np.uint16))
-    overlay = ImageData.from_arrays(np.ones((4, 8, 8), dtype=np.uint16) * 100, title="gfp")
-    result = SegmentationResult.empty_like(primary)
+    primary = AcdcData.from_arrays(np.zeros((4, 8, 8), dtype=np.uint16))
+    overlay = AcdcData.from_arrays(np.ones((4, 8, 8), dtype=np.uint16) * 100, name="gfp")
+    result = AcdcResult.empty_like(primary)
     viewer = VolumeViewer()
     viewer.open([primary, overlay], result)
     assert viewer.model.has_data
@@ -171,7 +176,7 @@ def test_volume_accepts_channel_list() -> None:
 
 
 def test_load_returns_images_and_segmentation(tmp_path: Path) -> None:
-    from acdc.middleware import load
+    from acdc.middleware import load as load_ctx
 
     images_dir = tmp_path / "Position_1" / "Images"
     images_dir.mkdir(parents=True)
@@ -183,7 +188,7 @@ def test_load_returns_images_and_segmentation(tmp_path: Path) -> None:
         "channel_0_name,phase\n",
         encoding="utf-8",
     )
-    ctx = load(tmp_path / "Position_1", channel="phase")
+    ctx = load_ctx(tmp_path / "Position_1", channel="phase")
     assert len(ctx.images) == 1
     assert ctx.segmentation.mask.shape == ctx.images[0].image.shape
 
@@ -193,8 +198,8 @@ def test_volume_viewer_open_without_show() -> None:
 
     image = np.zeros((4, 8, 8), dtype=np.uint16)
     image[:, 3:5, 3:5] = 500
-    imaged = ImageData.from_arrays(image)
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(image)
+    result = AcdcResult.empty_like(imaged)
     result.mask[:, 3:5, 3:5] = 1
     viewer = VolumeViewer()
     opened = viewer.open([imaged], result)

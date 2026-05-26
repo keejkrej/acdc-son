@@ -6,21 +6,21 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from acdc.channels import (
+from acdc.utils.channels import (
     default_channel_weights,
     refresh_channel_display_levels,
     resize_channel_weights,
 )
-from acdc.data import ImageData, SegmentationResult, coalesce_images, default_segmentation
+from acdc.core.data import AcdcData, AcdcResult, coalesce_images
 
 
 class VolumeModel:
     """Holds loaded image/mask volumes for 3D display."""
 
     def __init__(self) -> None:
-        self.channels: list[ImageData] = []
+        self.channels: list[AcdcData] = []
         self.channel_weights: list[float] = []
-        self.result: SegmentationResult | None = None
+        self.result: AcdcResult | None = None
         self.t_index = 0
         self.label_id = 1
         self.image_seg_blend = 50.0
@@ -28,7 +28,7 @@ class VolumeModel:
         self.channel_display_clim: list[tuple[float, float] | None] = []
 
     @property
-    def primary(self) -> ImageData | None:
+    def primary(self) -> AcdcData | None:
         """First channel (layout reference for mask and navigation)."""
         return self.channels[0] if self.channels else None
 
@@ -38,12 +38,12 @@ class VolumeModel:
 
     def bind(
         self,
-        images: Sequence[ImageData],
-        result: SegmentationResult | None = None,
-    ) -> SegmentationResult:
+        images: Sequence[AcdcData],
+        result: AcdcResult | None = None,
+    ) -> AcdcResult:
         image_list = list(coalesce_images(images))
         reference = image_list[0]
-        mask = result if result is not None else default_segmentation(reference)
+        mask = result if result is not None else AcdcResult.empty_like(reference)
         self.channels = image_list
         self.channel_weights = resize_channel_weights(self.channel_weights, len(image_list))
         if not self.channel_weights:
@@ -76,8 +76,6 @@ class VolumeModel:
 
     def status_label(self) -> str:
         reference = self.primary
-        if reference is not None and reference.title:
-            return reference.title
-        if reference is not None and reference.image_path is not None:
-            return reference.image_path.name
+        if reference is not None and reference.name:
+            return reference.name
         return ""

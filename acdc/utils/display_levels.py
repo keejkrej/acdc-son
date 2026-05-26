@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from acdc.segment import tools
+from acdc.core.stack import StackShape, normalize_to_4d
 
 
 def autoscale_levels(data: np.ndarray) -> tuple[float, float]:
@@ -24,20 +24,20 @@ def autoscale_levels(data: np.ndarray) -> tuple[float, float]:
 
 def stack_autoscale_levels(
     data: np.ndarray,
-    layout: tools.StackLayout,
+    stack_shape: StackShape,
 ) -> tuple[float, float]:
     """Autoscale across every frame and Z slice in a stack (min/max)."""
-    vol4 = tools.normalize_to_4d(data, layout)
+    vol4 = normalize_to_4d(data, stack_shape)
     return autoscale_levels(vol4)
 
 
 def stack_display_levels(
     data: np.ndarray,
-    layout: tools.StackLayout,
+    stack_shape: StackShape,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     """Return stack window ``(lo, hi)`` and default normalized clim (once per load)."""
-    stack_lo, stack_hi = stack_autoscale_levels(data, layout)
-    vol4 = tools.normalize_to_4d(data, layout)
+    stack_lo, stack_hi = stack_autoscale_levels(data, stack_shape)
+    vol4 = normalize_to_4d(data, stack_shape)
     scaled = scale_to_unit(vol4, stack_lo, stack_hi)
     clim = autoscale_levels(scaled)
     return (stack_lo, stack_hi), clim

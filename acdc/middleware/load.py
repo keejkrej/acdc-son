@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from collections.abc import Sequence
 
-from acdc.data import SegmentationResult, load as load_data
+from acdc.core.data import AcdcResult, load as load_data
 from acdc.middleware.context import AcdcContext
 
 
@@ -15,7 +15,7 @@ def load(
     channels: Sequence[str] | None = None,
     channel: str | None = None,
     position: str | None = None,
-    segmentation: SegmentationResult | None = None,
+    segmentation: AcdcResult | None = None,
 ) -> AcdcContext:
     """Load channel(s) and mask into a new context."""
     images, seg = load_data(

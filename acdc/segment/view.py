@@ -27,15 +27,15 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from acdc.blend import display_opacities
-from acdc.blend_controls import BlendControlBar
-from acdc.dialogs import pick_from_list, pick_many_from_list
+from acdc.utils.blend import display_opacities
+from acdc.ui.blend_controls import BlendControlBar
+from acdc.ui.dialogs import pick_from_list, pick_many_from_list
 
-from acdc.display_levels import autoscale_levels
+from acdc.utils.display_levels import autoscale_levels
 
 from .lut import ImageLutBar, SegmentationLutBar
-from . import tools
-from acdc.icons import LucideIcon, lucide_qicon
+from . import editing
+from acdc.ui.icons import LucideIcon, install_icon_theme_watcher, themed_lucide_qicon
 
 
 @dataclass
@@ -275,7 +275,7 @@ class ImageCanvas(QWidget):
             return np.array([], dtype=np.uint32)
         if not self._hidden_label_ids:
             return labels
-        return tools.apply_label_visibility(labels, self._hidden_label_ids)
+        return editing.apply_label_visibility(labels, self._hidden_label_ids)
 
     def _on_seg_lut_changed(self) -> None:
         self._apply_mask_lut()
@@ -287,7 +287,7 @@ class ImageCanvas(QWidget):
         if labels.size == 0 or not np.any(labels):
             self._contour_item.clear()
             return
-        rgba = tools.labels_to_contour_rgba(
+        rgba = editing.labels_to_contour_rgba(
             labels,
             self._seg_lut.current_lut(),
             thickness=1,
@@ -315,7 +315,7 @@ class ImageCanvas(QWidget):
             return
         pen = pg.mkPen((255, 220, 0), width=2, style=Qt.DashLine)
         for label_id in label_ids:
-            box = tools.label_bounding_box(mask_slice, label_id)
+            box = editing.label_bounding_box(mask_slice, label_id)
             if box is None:
                 continue
             ymin, xmin, ymax, xmax = box
@@ -811,62 +811,75 @@ class SegmentationView(QMainWindow):
         self.statusBar().showMessage("Open a Cell-ACDC folder to begin.")
         self._canvas.set_tool("hand")
         self._update_options_bar("hand")
+        install_icon_theme_watcher(self, self._refresh_action_icons)
+
+    def _refresh_action_icons(self) -> None:
+        self._open_folder_act.setIcon(themed_lucide_qicon(LucideIcon.FOLDER_OPEN))
+        self._open_file_act.setIcon(themed_lucide_qicon(LucideIcon.FILE_IMAGE))
+        self._save_act.setIcon(themed_lucide_qicon(LucideIcon.SAVE))
+        self._save_as_act.setIcon(themed_lucide_qicon(LucideIcon.SAVE_AS))
+        self._undo_act.setIcon(themed_lucide_qicon(LucideIcon.UNDO))
+        self._redo_act.setIcon(themed_lucide_qicon(LucideIcon.REDO))
+        self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
+        self._move_act.setIcon(themed_lucide_qicon(LucideIcon.MOVE))
+        self._brush_act.setIcon(themed_lucide_qicon(LucideIcon.BRUSH))
+        self._eraser_act.setIcon(themed_lucide_qicon(LucideIcon.ERASER))
 
     def _build_actions(self) -> None:
         self._open_folder_act = QAction("Open folder…", self)
-        self._open_folder_act.setIcon(lucide_qicon(LucideIcon.FOLDER_OPEN))
+        self._open_folder_act.setIcon(themed_lucide_qicon(LucideIcon.FOLDER_OPEN))
         self._open_folder_act.setShortcut("Ctrl+O")
         self._open_folder_act.setToolTip("Open Cell-ACDC experiment folder")
         self._open_folder_act.triggered.connect(self.open_folder_requested.emit)
 
         self._open_file_act = QAction("Open image file…", self)
-        self._open_file_act.setIcon(lucide_qicon(LucideIcon.FILE_IMAGE))
+        self._open_file_act.setIcon(themed_lucide_qicon(LucideIcon.FILE_IMAGE))
         self._open_file_act.setToolTip("Open a single image file")
         self._open_file_act.triggered.connect(self.open_image_file_requested.emit)
 
         self._save_act = QAction("Save mask", self)
-        self._save_act.setIcon(lucide_qicon(LucideIcon.SAVE))
+        self._save_act.setIcon(themed_lucide_qicon(LucideIcon.SAVE))
         self._save_act.setShortcut("Ctrl+S")
         self._save_act.triggered.connect(self.save_requested.emit)
 
         self._save_as_act = QAction("Save mask as…", self)
-        self._save_as_act.setIcon(lucide_qicon(LucideIcon.SAVE_AS))
+        self._save_as_act.setIcon(themed_lucide_qicon(LucideIcon.SAVE_AS))
         self._save_as_act.setShortcut("Ctrl+Shift+S")
         self._save_as_act.triggered.connect(self.save_as_requested.emit)
 
         self._undo_act = QAction("Undo", self)
-        self._undo_act.setIcon(lucide_qicon(LucideIcon.UNDO))
+        self._undo_act.setIcon(themed_lucide_qicon(LucideIcon.UNDO))
         self._undo_act.setShortcut("Ctrl+Z")
         self._undo_act.triggered.connect(self.undo_requested.emit)
 
         self._redo_act = QAction("Redo", self)
-        self._redo_act.setIcon(lucide_qicon(LucideIcon.REDO))
+        self._redo_act.setIcon(themed_lucide_qicon(LucideIcon.REDO))
         self._redo_act.setShortcut("Ctrl+Y")
         self._redo_act.triggered.connect(self.redo_requested.emit)
 
         self._hand_act = QAction("Hand", self)
-        self._hand_act.setIcon(lucide_qicon(LucideIcon.HAND))
+        self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
         self._hand_act.setShortcut("H")
         self._hand_act.setToolTip("Hand — pan the canvas (H)")
         self._hand_act.triggered.connect(lambda: self._on_tool_action("hand"))
 
         self._move_act = QAction("Move", self)
-        self._move_act.setIcon(lucide_qicon(LucideIcon.MOVE))
+        self._move_act.setIcon(themed_lucide_qicon(LucideIcon.MOVE))
         self._move_act.setCheckable(True)
         self._move_act.setShortcut("V")
         self._move_act.setToolTip("Move — click or drag to select labels (V)")
         self._move_act.triggered.connect(lambda: self._on_tool_action("move"))
 
         self._brush_act = QAction("Brush", self)
-        self._brush_act.setIcon(lucide_qicon(LucideIcon.BRUSH))
+        self._brush_act.setIcon(themed_lucide_qicon(LucideIcon.BRUSH))
         self._brush_act.setCheckable(True)
         self._brush_act.setShortcut("B")
         self._brush_act.setToolTip("Brush (B)")
         self._brush_act.triggered.connect(lambda: self._on_tool_action("brush"))
 
         self._eraser_act = QAction("Eraser", self)
-        self._eraser_act.setIcon(lucide_qicon(LucideIcon.ERASER))
+        self._eraser_act.setIcon(themed_lucide_qicon(LucideIcon.ERASER))
         self._eraser_act.setCheckable(True)
         self._eraser_act.setShortcut("E")
         self._eraser_act.setToolTip("Eraser (E)")

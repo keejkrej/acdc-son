@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from acdc.blend import display_opacities
-from acdc.data import ImageData
-from acdc.segment import tools
+from acdc.utils.blend import display_opacities
+from acdc.core.data import AcdcData
+from acdc.core import stack
 from acdc.volume.prepare import (
     label_volume_for_vispy,
     mask_volume_zyx,
@@ -21,7 +21,7 @@ from acdc.volume.prepare import (
 def test_volume_zyx_from_zstack() -> None:
     image = np.zeros((8, 16, 16), dtype=np.uint8)
     image[3, 8, 8] = 100
-    imaged = ImageData.from_arrays(image)
+    imaged = AcdcData.from_arrays(image)
     vol = volume_zyx(imaged)
     assert vol.shape == (8, 16, 16)
     assert vol[3, 8, 8] == 100
@@ -31,12 +31,12 @@ def test_mask_volume_zyx_matches_image_layout() -> None:
     image = np.zeros((4, 10, 10), dtype=np.uint8)
     mask = np.zeros((4, 10, 10), dtype=np.uint32)
     mask[1, 5, 5] = 2
-    layout = tools.infer_layout(image.shape)
-    imaged = ImageData(image=image, layout=layout)
-    from acdc.data import SegmentationResult
+    stack_shape = stack.infer_shape(image.shape)
+    imaged = AcdcData(image=image, stack_shape=stack_shape)
+    from acdc.core.data import AcdcResult
 
-    result = SegmentationResult(mask)
-    lab = mask_volume_zyx(result, layout)
+    result = AcdcResult(mask)
+    lab = mask_volume_zyx(result, stack_shape)
     assert lab[1, 5, 5] == 2
 
 
@@ -49,12 +49,12 @@ def test_normalize_image_volume_scales_to_unit_interval() -> None:
 
 
 def test_normalize_image_stack_volume_uses_full_stack_levels() -> None:
-    stack = np.zeros((8, 8, 8), dtype=np.uint16)
-    stack[2, 1:7, 1:7] = 100
-    stack[4, 4, 4] = 60000
-    layout = tools.infer_layout(stack.shape)
-    vol = stack[2]
-    scaled, clim = normalize_image_stack_volume(vol, stack, layout)
+    volume = np.zeros((8, 8, 8), dtype=np.uint16)
+    volume[2, 1:7, 1:7] = 100
+    volume[4, 4, 4] = 60000
+    stack_shape = stack.infer_shape(volume.shape)
+    z_slice = volume[2]
+    scaled, clim = normalize_image_stack_volume(z_slice, volume, stack_shape)
     assert scaled[2, 2] == pytest.approx(100 / 60000)
     assert clim[1] > clim[0]
 

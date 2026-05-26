@@ -1,15 +1,15 @@
 """Cell-ACDC minimal manual segmentation GUI."""
 
 from acdc.app import get_qapp, run
-from acdc.data import ImageData, SegmentationResult
+from acdc.core.data import AcdcData, AcdcResult
 from acdc.middleware import AcdcContext
 from acdc.segment.viewer import SegmentationViewer, current_viewer
 from acdc.volume.viewer import VolumeViewer, current_volume_viewer
 
 __all__ = [
     "AcdcContext",
-    "ImageData",
-    "SegmentationResult",
+    "AcdcData",
+    "AcdcResult",
     "SegmentationViewer",
     "VolumeViewer",
     "current_viewer",

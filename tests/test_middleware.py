@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from qtpy.QtCore import QTimer
 
-from acdc.data import ImageData, SegmentationResult
+from acdc.core.data import AcdcData, AcdcResult
 from acdc.middleware import (
     AcdcContext,
     from_arrays,
@@ -19,8 +19,8 @@ from acdc.middleware import (
 
 
 def test_from_arrays() -> None:
-    imaged = ImageData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
-    result = SegmentationResult.empty_like(imaged)
+    imaged = AcdcData.from_arrays(np.zeros((4, 4), dtype=np.uint8))
+    result = AcdcResult.empty_like(imaged)
     ctx = from_arrays([imaged], result)
     assert ctx.images == (imaged,)
     assert ctx.segmentation is result
@@ -29,8 +29,8 @@ def test_from_arrays() -> None:
 def test_use_runs_in_order() -> None:
     order: list[str] = []
     ctx = from_arrays(
-        [ImageData.from_arrays(np.zeros((4, 4), dtype=np.uint8))],
-        SegmentationResult.empty_like(ImageData.from_arrays(np.zeros((4, 4), dtype=np.uint8))),
+        [AcdcData.from_arrays(np.zeros((4, 4), dtype=np.uint8))],
+        AcdcResult.empty_like(AcdcData.from_arrays(np.zeros((4, 4), dtype=np.uint8))),
     )
 
     def first(c: AcdcContext, next_) -> None:
@@ -64,8 +64,8 @@ def test_load_returns_context(tmp_path: Path) -> None:
 
 
 def test_run_segment_middleware_blocks_until_close() -> None:
-    imaged = ImageData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
-    ctx = from_arrays([imaged], SegmentationResult.empty_like(imaged))
+    imaged = AcdcData.from_arrays(np.zeros((6, 6), dtype=np.uint8))
+    ctx = from_arrays([imaged], AcdcResult.empty_like(imaged))
 
     def close_window() -> None:
         from acdc.segment.viewer import current_viewer
@@ -80,8 +80,8 @@ def test_run_segment_middleware_blocks_until_close() -> None:
 
 
 def test_run_volume_middleware_blocks_until_close() -> None:
-    imaged = ImageData.from_arrays(np.zeros((4, 8, 8), dtype=np.uint16))
-    ctx = from_arrays([imaged], SegmentationResult.empty_like(imaged))
+    imaged = AcdcData.from_arrays(np.zeros((4, 8, 8), dtype=np.uint16))
+    ctx = from_arrays([imaged], AcdcResult.empty_like(imaged))
 
     def close_window() -> None:
         from acdc.volume.viewer import current_volume_viewer

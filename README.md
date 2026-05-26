@@ -47,10 +47,11 @@ ctx = use(run_segment)(ctx)
 Build data yourself when you need full control:
 
 ```python
+import acdc
 from acdc.middleware import from_arrays, run_segment
 
-images = acdc.ImageData.from_path_channels("/path/to/experiment", ["phase", "gfp"])
-segmentation = acdc.SegmentationResult.empty_like(images[0])
+images = acdc.AcdcData.from_experiment("/path/to/experiment", channels=["phase", "gfp"])
+segmentation = acdc.AcdcResult.empty_like(images[0])
 ctx = from_arrays(images, segmentation)
 ctx = use(run_segment)(ctx)
 ```
@@ -60,5 +61,5 @@ ctx = use(run_segment)(ctx)
 - **`use(m1, m2, ...)`** — compose middleware; returns `ctx -> ctx`
 - **`run_segment` / `run_volume`** — built-in viewer middleware (block until window closes)
 - **`use(run_segment)(ctx)`** — run a single viewer step without composing a pipeline
-- **`ImageData` / `SegmentationResult`** — data types (`acdc.data`)
+- **`AcdcData` / `AcdcResult`** — data types (`acdc.core.data`)
 - **`run()`** — only for CLI apps (`uv run acdc-seg` or `uv run acdc-3d`)
