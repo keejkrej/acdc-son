@@ -614,7 +614,7 @@ class ImageCanvas(QWidget):
             ev.accept()
             return
 
-        if self._tool == "move" and button == Qt.LeftButton:
+        if self._tool == "select" and button == Qt.LeftButton:
             if ev.isStart():
                 self._select_drag_start = self._map_pos_to_pixel(ev.scenePos())
                 ev.accept()
@@ -624,11 +624,7 @@ class ImageCanvas(QWidget):
                 y0, x0 = self._select_drag_start
                 if ev.isFinish():
                     self._clear_marquee()
-                    if end is None:
-                        self.pick_at.emit(y0, x0)
-                    elif y0 == end[0] and x0 == end[1]:
-                        self.pick_at.emit(y0, x0)
-                    else:
+                    if end is not None and (y0 != end[0] or x0 != end[1]):
                         self.rect_pick.emit(y0, x0, end[0], end[1])
                     self._select_drag_start = None
                 elif end is not None:
@@ -658,6 +654,12 @@ class ImageCanvas(QWidget):
             return
         if ev.button() == Qt.LeftButton and self._paint_tool_active():
             self._toggle_lazy_stroke(ev.scenePos())
+            ev.accept()
+            return
+        if ev.button() == Qt.LeftButton and self._tool == "move":
+            mapped = self._map_pos_to_pixel(ev.scenePos())
+            if mapped is not None:
+                self.pick_at.emit(*mapped)
             ev.accept()
             return
         self._orig_click(ev)
@@ -845,7 +847,8 @@ class SegmentView(QMainWindow):
         self._undo_act.setIcon(themed_lucide_qicon(LucideIcon.UNDO))
         self._redo_act.setIcon(themed_lucide_qicon(LucideIcon.REDO))
         self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
-        self._move_act.setIcon(themed_lucide_qicon(LucideIcon.SELECT_RECT))
+        self._move_act.setIcon(themed_lucide_qicon(LucideIcon.MOVE))
+        self._select_act.setIcon(themed_lucide_qicon(LucideIcon.SELECT_RECT))
         self._brush_act.setIcon(themed_lucide_qicon(LucideIcon.BRUSH))
         self._eraser_act.setIcon(themed_lucide_qicon(LucideIcon.ERASER))
         self._pen_act.setIcon(themed_lucide_qicon(LucideIcon.PEN))
@@ -882,6 +885,19 @@ class SegmentView(QMainWindow):
         self._redo_act.setShortcut("Ctrl+Y")
         self._redo_act.triggered.connect(self.redo_requested.emit)
 
+        self._move_act = QAction("Move", self)
+        self._move_act.setIcon(themed_lucide_qicon(LucideIcon.MOVE))
+        self._move_act.setCheckable(True)
+        self._move_act.setShortcut("V")
+        self._move_act.setToolTip("Move — click a cell to select its label (V)")
+        self._move_act.triggered.connect(lambda checked: self._on_tool_action("move", checked))
+
+        self._select_act = QAction("Select", self)
+        self._select_act.setIcon(themed_lucide_qicon(LucideIcon.SELECT_RECT))
+        self._select_act.setCheckable(True)
+        self._select_act.setToolTip("Select — drag a rectangle to select labels")
+        self._select_act.triggered.connect(lambda checked: self._on_tool_action("select", checked))
+
         self._hand_act = QAction("Hand", self)
         self._hand_act.setIcon(themed_lucide_qicon(LucideIcon.HAND))
         self._hand_act.setCheckable(True)
@@ -890,13 +906,6 @@ class SegmentView(QMainWindow):
             "Hand — drag to pan; middle-drag or Space+drag to pan; scroll to zoom (H)"
         )
         self._hand_act.triggered.connect(lambda checked: self._on_tool_action("hand", checked))
-
-        self._move_act = QAction("Select", self)
-        self._move_act.setIcon(themed_lucide_qicon(LucideIcon.SELECT_RECT))
-        self._move_act.setCheckable(True)
-        self._move_act.setShortcut("V")
-        self._move_act.setToolTip("Select — click or drag a rectangle to select labels (V)")
-        self._move_act.triggered.connect(lambda checked: self._on_tool_action("move", checked))
 
         self._brush_act = QAction("Brush", self)
         self._brush_act.setIcon(themed_lucide_qicon(LucideIcon.BRUSH))
@@ -926,11 +935,12 @@ class SegmentView(QMainWindow):
 
         self._tool_group = QActionGroup(self)
         self._tool_group.setExclusive(True)
-        self._tool_group.addAction(self._hand_act)
         self._tool_group.addAction(self._move_act)
+        self._tool_group.addAction(self._select_act)
         self._tool_group.addAction(self._brush_act)
         self._tool_group.addAction(self._eraser_act)
         self._tool_group.addAction(self._pen_act)
+        self._tool_group.addAction(self._hand_act)
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
@@ -978,11 +988,12 @@ class SegmentView(QMainWindow):
         bar.setMovable(False)
         bar.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.addToolBar(Qt.LeftToolBarArea, bar)
-        bar.addAction(self._hand_act)
         bar.addAction(self._move_act)
+        bar.addAction(self._select_act)
         bar.addAction(self._brush_act)
         bar.addAction(self._eraser_act)
         bar.addAction(self._pen_act)
+        bar.addAction(self._hand_act)
 
     def _build_labels_dock(self) -> None:
         self._label_panel = LabelListPanel()
@@ -1014,6 +1025,7 @@ class SegmentView(QMainWindow):
         action_by_tool = {
             "hand": self._hand_act,
             "move": self._move_act,
+            "select": self._select_act,
             "brush": self._brush_act,
             "eraser": self._eraser_act,
             "pen": self._pen_act,

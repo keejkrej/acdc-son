@@ -28,7 +28,7 @@ class SegmentModel:
         self.z_index = 0
         self.brush_size = 4
         self.label_id = 1
-        self.tool = "hand"  # "move" | "hand" | "brush" | "eraser" | "pen"
+        self.tool = "hand"  # "move" | "select" | "hand" | "brush" | "eraser" | "pen"
         self._result: AcdcResult | None = None
         self.saved = True
         self._undo: list[np.ndarray] = []

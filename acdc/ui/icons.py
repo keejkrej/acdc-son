@@ -25,6 +25,7 @@ class LucideIcon:
     UNDO = "undo-2"
     REDO = "redo-2"
     HAND = "hand"
+    MOVE = "move"
     SELECT_RECT = "square-dashed"
     PEN = "pen-tool"
     BRUSH = "paintbrush"
